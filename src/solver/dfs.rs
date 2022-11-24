@@ -180,7 +180,7 @@ pub struct EvaluationStats {
 
 #[derive(Clone)]
 pub struct Solution {
-    pub(crate) literals: Rc<VariableRegister>,
+    pub literals: Rc<VariableRegister>,
     pub(crate) solution: Option<LiteralSet>,
     pub stats: EvaluationStats,
 }

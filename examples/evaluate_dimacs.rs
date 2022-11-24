@@ -39,12 +39,16 @@ fn run(filepath: &str) -> Result<(), Error> {
     let sol = instance.solve();
     match sol.assignments() {
         None => println!("s UNSATISFIABLE"),
-        Some(mut assignments) => {
+        Some(assignment_set) => {
             println!("s SATISFIABLE");
-            assignments.sort_by_key(|e| e.var().0);
-            let solution = assignments
+            let mut by_var_name = assignment_set
                 .iter()
-                .map(|lit| format!("{}{}", if lit.polarity() { "" } else { "-" }, lit.var().0))
+                .map(|lit| (sol.literals.get(lit.var()), lit.polarity()))
+                .collect::<Vec<_>>();
+            by_var_name.sort_by_key(|e| e.0.parse::<u64>().unwrap());
+            let solution = by_var_name
+                .iter()
+                .map(|(var_name, polarity)| format!("{}{}", if *polarity { "" } else { "-" }, var_name))
                 .intersperse(" ".to_string())
                 .collect::<String>();
             println!("v {} 0", solution);

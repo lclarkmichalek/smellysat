@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::instance::Variable;
 
 #[derive(Clone, Debug)]
-pub(crate) struct VariableRegister {
+pub struct VariableRegister {
     variables: Vec<Variable>,
     names: HashMap<u64, String>,
     original_variables: Vec<u64>,
@@ -20,11 +20,11 @@ impl VariableRegister {
         }
     }
 
-    pub(crate) fn get(&self, lit: Variable) -> &str {
+    pub fn get(&self, lit: Variable) -> &str {
         self.names.get(&lit.0).unwrap()
     }
 
-    pub(crate) fn get_by_name(&self, name: &str) -> Option<Variable> {
+    pub fn get_by_name(&self, name: &str) -> Option<Variable> {
         for (&ix, n) in &self.names {
             if n == name {
                 return Some(Variable(ix));
@@ -57,11 +57,11 @@ impl VariableRegister {
         Variable(ix)
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &Variable> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = &Variable> + '_ {
         self.variables.iter()
     }
 
-    pub(crate) fn iter_original(&self) -> impl Iterator<Item = Variable> + '_ {
+    pub fn iter_original(&self) -> impl Iterator<Item = Variable> + '_ {
         self.original_variables.iter().map(|ix| Variable(*ix))
     }
 }
