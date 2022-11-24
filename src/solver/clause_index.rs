@@ -59,7 +59,6 @@ impl<'a> ClauseIndex<'a> {
         if entry.is_none() {
             return;
         }
-        println!("resolving {:?}", var);
         for &ix in entry.unwrap() {
             self.clause_states[ix].free_variable_count -= 1;
             match self.clause_states[ix].free_variable_count {
@@ -77,7 +76,6 @@ impl<'a> ClauseIndex<'a> {
     }
 
     pub(crate) fn mark_unresolved(&mut self, var: Variable) {
-        println!("unresolving {:?}", var);
         if let Some(ixes) = self.by_var.get(&var) {
             for &ix in ixes {
                 self.clause_states[ix].free_variable_count += 1;

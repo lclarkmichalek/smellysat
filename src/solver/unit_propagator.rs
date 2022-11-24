@@ -74,17 +74,15 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                 match self.propagate_unit(literal, &clause) {
                     PropagationResult::Conflicted(conflict) => return Some(conflict),
                     PropagationResult::Inferred(inferred) => {
+                        // Important: propagate_unit takes its assignment from dfs_path. Deferring
+                        // adding to the dfs path causes issues
+                        self.dfs_path.add_inferred(inferred);
                         self.knowledge_graph.add_inferred(inferred, clause);
+                        self.clause_index.mark_resolved(inferred.var());
                         inferred_literals.push(inferred);
                     }
                     PropagationResult::Failed => (),
                 }
-            }
-            inferred_literals.sort();
-            inferred_literals.dedup();
-            for inferred in &inferred_literals {
-                self.dfs_path.add_inferred(*inferred);
-                self.clause_index.mark_resolved(inferred.var());
             }
             queue.extend(inferred_literals);
         }
@@ -113,7 +111,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
     fn propagate_unit(&self, literal: Literal, clause: &'c Clause) -> PropagationResult<'c> {
         let assignment = self.dfs_path.assignment();
 
-        let mut last_unknown = None;
+        let mut last_free = None;
         for literal in clause.literals() {
             if let Some(ass_sign) = assignment.get(literal.var()) {
                 if ass_sign == literal.polarity() {
@@ -121,14 +119,21 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                     return PropagationResult::Failed;
                 }
             } else {
-                if last_unknown != None {
+                if last_free != None {
                     // Implies we have multiple unresolved variables, short circuit
                     return PropagationResult::Failed;
                 }
-                last_unknown = Some(*literal);
+                last_free = Some(*literal);
             }
         }
-        PropagationResult::Inferred(last_unknown.unwrap())
+        // Having no free variables, but being unable to propagate implies a conflict
+        match last_free {
+            Some(lit) => PropagationResult::Inferred(lit),
+            None => PropagationResult::Conflicted(Conflict {
+                literal,
+                conflicting_clause: clause,
+            })
+        }
     }
 }
 
