@@ -1,12 +1,9 @@
+extern crate itertools;
 extern crate smellysat;
 
+use itertools::Itertools;
 use smellysat::dimacs;
-use std::{
-    env,
-    iter::{Filter, StepBy},
-    ops::Range,
-    process,
-};
+use std::{env, process};
 
 use thiserror::Error;
 
@@ -40,6 +37,18 @@ fn run(filepath: &str) -> Result<(), Error> {
 
     eprintln!("evaluating");
     let sol = instance.solve();
-    println!("{:?}", sol);
+    match sol.assignments() {
+        None => println!("s UNSATISFIABLE"),
+        Some(mut assignments) => {
+            println!("s SATISFIABLE");
+            assignments.sort_by_key(|e| e.var().0);
+            let solution = assignments
+                .iter()
+                .map(|lit| format!("{}{}", if lit.polarity() { "" } else { "-" }, lit.var().0))
+                .intersperse(" ".to_string())
+                .collect::<String>();
+            println!("v {} 0", solution);
+        }
+    }
     Ok(())
 }

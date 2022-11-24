@@ -185,6 +185,12 @@ pub struct Solution {
     pub stats: EvaluationStats,
 }
 
+impl Solution {
+    pub fn assignments(&self) -> Option<Vec<Literal>> {
+        self.solution.clone().map(|ls| ls.as_assignment_vec())
+    }
+}
+
 impl fmt::Debug for Solution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(solution) = &self.solution {
