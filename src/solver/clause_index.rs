@@ -100,9 +100,7 @@ impl<'a> ClauseIndex<'a> {
     }
 
     pub(crate) fn all_clauses_resolved(&self) -> bool {
-        self.no_free_var_clauses.is_empty()
-            && self.one_free_var_clauses.is_empty()
-            && self.two_free_var_clause_count == 0
+        self.no_free_var_clauses.len() == self.clause_states.len()
     }
 
     pub(crate) fn find_unit_prop_candidates(&self, literal: Literal) -> Vec<&'a Clause> {
@@ -210,5 +208,12 @@ mod test {
         println!("ec: {:?}", ci.find_evaluatable_candidates(notc));
         println!("ecl: {:?}", ci.find_evaluatable_candidates(notc).len());
         assert_eq!(ci.find_evaluatable_candidates(notc).len(), 1);
+        ci.mark_unresolved(notc.var());
+
+        // Now let's resolve everything
+        ci.mark_resolved(a);
+        ci.mark_resolved(b);
+        ci.mark_resolved(c);
+        assert!(ci.all_clauses_resolved());
     }
 }
