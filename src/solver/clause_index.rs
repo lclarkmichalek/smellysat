@@ -172,7 +172,6 @@ mod test {
 
     use super::ClauseIndex;
 
-
     #[test]
     fn test_clause_index() {
         let a = Variable(0);
@@ -180,7 +179,7 @@ mod test {
         let c = Variable(2);
         let clauses = vec![
             // a || c
-            Clause::new(&vec![Literal::new(a,true), Literal::new(c, true)]),
+            Clause::new(&vec![Literal::new(a, true), Literal::new(c, true)]),
             // b || c
             Clause::new(&vec![Literal::new(b, true), Literal::new(c, true)]),
             // c || c
