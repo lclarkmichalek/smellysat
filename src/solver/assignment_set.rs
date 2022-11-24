@@ -3,7 +3,7 @@ use core::fmt;
 
 use fnv::FnvHashMap;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct LiteralSet {
     values: FnvHashMap<Variable, bool>,
 }

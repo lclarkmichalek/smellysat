@@ -2,7 +2,6 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::instance::*;
-use crate::solver::dfs;
 use crate::solver::dfs_path::DFSPath;
 use crate::solver::knowledge_graph::{self, KnowledgeGraph};
 use crate::solver::unit_propagator::{find_inital_assignment, Conflict, InitialAssignmentResult};
@@ -92,15 +91,6 @@ impl Instance {
                 solution: Some(dfs_path.assignment().clone()),
                 stats: stats,
             };
-        }
-
-        if let Some(var) = traversal_plan.next(&dfs_path) {
-            let literal = Literal::new(*var, true);
-            dfs_path.add_decision(literal);
-            clause_index.mark_resolved(literal.var());
-            knowledge_graph.add_decision(literal);
-        } else {
-            panic!("Empty problem?");
         }
 
         loop {
@@ -223,8 +213,8 @@ impl fmt::Debug for Solution {
 mod test {
     use crate::{
         problem_builder::ProblemBuilder,
-        solver::{clause_index::ClauseIndex, dfs_path::DFSPath},
-        *,
+        solver::{Instance, assignment_set::LiteralSet},
+        *, variable_registry::VariableRegister,
     };
 
     // This test starts with a satisfiable formula (A OR B), and then goes into an unsatisfiable formula.
@@ -298,18 +288,23 @@ mod test {
 
     #[test]
     fn test_build_and_solve_feasible_from_initial() {
-        let mut pb = ProblemBuilder::new();
+        let mut vr = VariableRegister::new();
+        let a = vr.create_original("a");
+        let b = vr.create_original("b");
+        let c = vr.create_original("c");
+        let clauses = vec![
+            Clause::new(&vec![Literal::new(a, true)]),
+            Clause::new(&vec![Literal::new(a, false), Literal::new(b, true)]),
+            Clause::new(&vec![Literal::new(b, false), Literal::new(c, true)]),
+        ];
 
-        let a = pb.var("a");
-        let b = pb.var("b");
-        let c = pb.var("c");
-        pb.require(a);
-        pb.require(pb.and(pb.not(a), b));
-        pb.require(pb.and(pb.not(c), c));
-
-        let mut instance = pb.build();
+        let mut instance = Instance::new_from_clauses(clauses, vr);
         let solution = instance.solve();
-        assert!(solution.solution.is_some());
-        println!("{:?}", solution);
+        
+        let mut expected = LiteralSet::new();
+        expected.add(Literal::new(a, true));
+        expected.add(Literal::new(b, true));
+        expected.add(Literal::new(c, true));
+        assert_eq!(solution.solution, Some(expected));
     }
 }

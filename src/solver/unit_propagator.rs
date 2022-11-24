@@ -156,6 +156,8 @@ pub(crate) fn find_inital_assignment<'a, 'c>(
         .iter()
         .map(|cl| cl.literals()[0])
         .collect();
+
+    // Check if we have any duplicates
     literals.sort();
     literals.dedup();
     for window in literals.windows(2) {
@@ -169,7 +171,7 @@ pub(crate) fn find_inital_assignment<'a, 'c>(
             });
         }
     }
-    eprintln!("unit clauses: {:?}", literals);
+
     for &literal in literals.iter() {
         clause_index.mark_resolved(literal.var());
         // Questionable semantics, but whatever.

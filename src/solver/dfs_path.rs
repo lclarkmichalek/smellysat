@@ -1,5 +1,4 @@
 use core::fmt;
-
 use crate::instance::*;
 
 use super::assignment_set::LiteralSet;
@@ -10,6 +9,7 @@ use super::assignment_set::LiteralSet;
 #[derive(Clone)]
 pub(crate) struct DFSPath {
     path: Vec<DFSPathEntry>,
+    initial_assignment: LiteralSet,
     assignment: LiteralSet,
 }
 
@@ -18,13 +18,15 @@ impl DFSPath {
     pub(crate) fn new(initial_assignment: LiteralSet) -> DFSPath {
         DFSPath {
             path: vec![],
-            assignment: initial_assignment,
+            assignment: initial_assignment.clone(),
+            initial_assignment,
         }
     }
 
     pub(crate) fn empty() -> DFSPath {
         DFSPath {
             path: vec![],
+            initial_assignment: LiteralSet::new(),
             assignment: LiteralSet::new(),
         }
     }
@@ -38,8 +40,12 @@ impl DFSPath {
         &self.assignment
     }
 
+    /// In the case of no decision being made prior to this function being called, we return the initial assignment set
     pub(crate) fn assignments_since_last_decision(&self) -> &LiteralSet {
-        &self.path.last().unwrap().all
+        match self.path.last() {
+            Some(entry) => &entry.all,
+            None => &self.initial_assignment
+        }
     }
 
     // Records a step in the DFS search
@@ -55,9 +61,18 @@ impl DFSPath {
         self.require_unset(literal);
 
         self.assignment.add(literal);
-        let last_step = self.path.last_mut().unwrap();
-        last_step.inferred.push(literal);
-        last_step.all.add(literal);
+        match self.path.last_mut() {
+            Some(last_step) =>  {
+                last_step.inferred.push(literal);
+                last_step.all.add(literal);
+            },
+            None => {
+                // Ok, now shits getting fucky. If we've inferred something without taking a step,
+                // then presumably we're in the first round of unit prop. Cosequentially, it's
+                // really part of the initial assignment. 
+                self.initial_assignment.add(literal);
+            }
+        }
     }
 
     /// Finds the last point to backtrack to according to the strategy (see find_backtrack_point_dfs)
