@@ -65,7 +65,6 @@ impl LiteralSet {
         }
         EvaluationResult::False
     }
-
 }
 
 impl fmt::Debug for LiteralSet {
@@ -88,7 +87,6 @@ pub(crate) enum EvaluationResult {
     False,
     Unknown,
 }
-
 
 #[cfg(test)]
 mod test {

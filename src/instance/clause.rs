@@ -45,6 +45,10 @@ impl Clause {
         self.literals.len()
     }
 
+    pub(crate) fn is_unit(&self) -> bool {
+        self.len() == 1
+    }
+
     pub(crate) fn literals(&self) -> &Vec<Literal> {
         &self.literals
     }

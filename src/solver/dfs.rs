@@ -2,130 +2,16 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::instance::*;
-use crate::solver::knowledge_graph::KnowledgeGraph;
+use crate::solver::dfs;
+use crate::solver::dfs_path::DFSPath;
+use crate::solver::knowledge_graph::{KnowledgeGraph, self};
+use crate::solver::unit_propagator::{InitialAssignmentResult, find_inital_assignment, Conflict};
 use crate::variable_registry::VariableRegister;
 
 use super::assignment_set::LiteralSet;
 use super::clause_index::ClauseIndex;
 use super::unit_propagator::UnitPropagator;
 
-#[derive(Clone)]
-pub(crate) struct SearchPath {
-    initial_inferred_literals: Vec<Literal>,
-    path: Vec<SearchPathEntry>,
-    current_assignments: LiteralSet,
-
-    assignments_since_last_step: Vec<Literal>,
-}
-
-#[derive(Clone)]
-struct SearchPathEntry {
-    chosen: Vec<Literal>,
-    inferred: Vec<Literal>,
-}
-
-impl SearchPath {
-    pub(crate) fn new() -> SearchPath {
-        SearchPath {
-            initial_inferred_literals: vec![],
-            path: vec![SearchPathEntry {
-                chosen: vec![],
-                inferred: vec![],
-            }],
-            current_assignments: LiteralSet::new(),
-
-            assignments_since_last_step: vec![],
-        }
-    }
-
-    pub(crate) fn assignments_since_last_step(&self) -> &Vec<Literal> {
-        &self.assignments_since_last_step
-    }
-
-    pub(crate) fn assignment(&self) -> &LiteralSet {
-        &self.current_assignments
-    }
-
-    pub(crate) fn step(&mut self, clause_index: &mut ClauseIndex, lit: Literal) {
-        self.current_assignments.add(lit);
-        clause_index.mark_resolved(lit.var());
-
-        self.assignments_since_last_step.clear();
-        self.assignments_since_last_step.push(lit);
-
-        self.path.push(SearchPathEntry {
-            chosen: vec![lit],
-            inferred: vec![],
-        });
-    }
-
-    pub(crate) fn add_initial_unit(&mut self, literal: Literal) {
-        self.current_assignments.add(literal);
-        self.assignments_since_last_step.push(literal);
-        self.path.last_mut().unwrap().chosen.push(literal);
-    }
-
-    pub(crate) fn add_inferred(&mut self, literal: Literal) {
-        self.current_assignments.add(literal);
-        self.assignments_since_last_step.push(literal);
-        self.path.last_mut().unwrap().inferred.push(literal);
-    }
-
-    fn backtrack(&mut self, clause_index: &mut ClauseIndex) -> Option<Vec<SearchPathEntry>> {
-        // Find the last time we took a 'true' path (i.e. left hand path)
-        let last_lhs = self.path.iter().rposition(|step| step.chosen.polarity());
-        if last_lhs == None {
-            return None;
-        }
-        // Drop everything after and including that
-        let backtrack_ix = last_lhs.unwrap();
-        // println!("backtracking {:}", self.path.len() - backtrack_ix);
-        let backtracked: Vec<SearchPathEntry> = self.path.drain(backtrack_ix..).collect();
-        for step in &backtracked {
-            self.current_assignments.remove(step.chosen);
-            clause_index.mark_unresolved(step.chosen.var());
-            for &ass in &step.inferred {
-                self.current_assignments.remove(ass);
-                clause_index.mark_unresolved(ass.var());
-            }
-        }
-        // Reset some states
-        self.assignments_since_last_step.clear();
-        Some(backtracked)
-    }
-
-    fn backtrack_and_pivot(&mut self, clause_index: &mut ClauseIndex) -> bool {
-        if let Some(backtracked) = self.backtrack(clause_index) {
-            // And then put in a traversal on the RHS
-            let pivot = backtracked[0].chosen;
-            // println!("pivot: {:?}", pivot);
-            self.step(clause_index, pivot.invert());
-            true
-        } else {
-            // If we can't backtrack further, then we finished the tree without a solution
-            false
-        }
-    }
-
-    fn depth(&self) -> usize {
-        self.path.len()
-    }
-
-    fn size(&self) -> usize {
-        self.current_assignments.size()
-    }
-}
-
-impl fmt::Debug for SearchPath {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "SearchPath {{ depth={:?}, assignment=[{:?}] }}",
-            self.depth(),
-            self.current_assignments
-        )
-    }
-}
 
 #[derive(Debug, Clone)]
 struct TraversalPath {
@@ -133,10 +19,10 @@ struct TraversalPath {
 }
 
 impl TraversalPath {
-    fn next(&self, path: &SearchPath) -> Option<&Variable> {
+    fn next(&self, path: &DFSPath) -> Option<&Variable> {
         self.variables
             .iter()
-            .filter(|&&l| path.current_assignments.get(l).is_none())
+            .filter(|&&l| path.assignment().get(l).is_none())
             .next()
     }
 }
@@ -169,50 +55,6 @@ impl Instance {
         }
     }
 
-    fn do_clause_evaluation<'a>(
-        &'a self,
-        clause_index: &mut ClauseIndex,
-        path: &mut SearchPath,
-        kg: &mut KnowledgeGraph,
-    ) -> IterationResult {
-        let mut prop = UnitPropagator::new(clause_index, path, kg);
-        match prop.evaluate() {
-            Some(conflict) => {
-                // println!(
-                //     "backtracking due to violated clauses: {:?}",
-                //     violated_clauses
-                // );
-                if !path.backtrack_and_pivot(clause_index) {
-                    return IterationResult::Backtracked(None);
-                }
-                return IterationResult::Backtracked(Some(()));
-            }
-            _ => IterationResult::Ok,
-        }
-    }
-
-    fn do_unit_propagation<'a>(
-        &'a self,
-        clause_index: &mut ClauseIndex,
-        path: &mut SearchPath,
-        kg: &mut KnowledgeGraph,
-    ) -> IterationResult {
-        let mut prop = UnitPropagator::new(clause_index, path, kg);
-        match prop.propagate_units() {
-            Some(conflict) => {
-                // println!(
-                //     "backtracking due to violated clauses: {:?}",
-                //     violated_clauses
-                // );
-                if !path.backtrack_and_pivot(clause_index) {
-                    return IterationResult::Backtracked(None);
-                }
-                return IterationResult::Backtracked(Some(()));
-            }
-            _ => IterationResult::Ok,
-        }
-    }
-
     pub fn solve(&mut self) -> Solution {
         let mut stats = EvaluationStats {
             step_count: 0,
@@ -220,104 +62,100 @@ impl Instance {
             backtrack_from_violation_count: 0,
             backtrack_from_conflict_count: 0,
         };
-        let mut path = SearchPath::new();
         let traversal_plan = TraversalPath {
             variables: self.variables.clone(),
         };
 
         let mut clause_index = ClauseIndex::new(&self.clauses);
-        let mut kg = KnowledgeGraph::new();
+        let mut knowledge_graph = KnowledgeGraph::new();
 
-        // for clause in &self.clauses {
-        //     println!("{:?}", clause);
-        // }
+        let mut dfs_path = match find_inital_assignment(&mut clause_index, &mut knowledge_graph) {
+            InitialAssignmentResult::Conflict(conflict) => return Solution {
+                literals: self.variables.clone(),
+                solution: None,
+                stats
+            },
+            InitialAssignmentResult::Assignment(vars) => DFSPath::new(LiteralSet::from_assignment_vec(&vars))
+        };
 
-        {
-            let mut prop = UnitPropagator::new(&mut clause_index, &mut path, &mut kg);
-            if let Some(conflict) = prop.initial_unit_propagation() {
-                println!("conflict during initial unit propagation: {:?}", conflict);
-                return Solution {
-                    literals: self.variables.clone(),
-                    solution: None,
-                    stats,
-                };
-            }
-        }
-
-        println!("inferred {} units pre traversal", path.size());
+        println!("inferred {} units pre traversal", dfs_path.assignment().size());
 
         if clause_index.all_clauses_resolved() {
             return Solution {
                 literals: self.variables.clone(),
-                solution: Some(path.current_assignments),
+                solution: Some(dfs_path.assignment().clone()),
                 stats: stats,
             };
         }
 
-        if let Some(var) = traversal_plan.next(&path) {
-            let lit = Literal::new(*var, true);
-            path.step(&mut clause_index, lit);
-            kg.add_decision(lit);
+        if let Some(var) = traversal_plan.next(&dfs_path) {
+            let literal = Literal::new(*var, true);
+            dfs_path.add_decision(literal);
+            clause_index.mark_resolved(literal.var());
+            knowledge_graph.add_decision(literal);
         } else {
             panic!("Empty problem?");
         }
 
         loop {
             // println!("evaluating with {:?} vars", path.current_assignments.size());
+            let mut unit_prop = UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
 
-            match self.do_clause_evaluation(&mut clause_index, &mut path, &mut kg) {
-                IterationResult::Backtracked(None) => {
-                    return Solution {
+            let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
+            if let Some(conflict) = prop_eval_result {
+                match self.backtrack_and_pivot(conflict, &mut dfs_path, &mut clause_index, &mut knowledge_graph) {
+                    None => return Solution {
                         literals: self.variables.clone(),
                         solution: None,
                         stats,
-                    };
+                    },
+                    Some(_) => ()
                 }
-                IterationResult::Backtracked(Some(_)) => continue,
-                IterationResult::Ok => (),
-            };
-
-            if clause_index.all_clauses_resolved() {
-                return Solution {
-                    literals: self.variables.clone(),
-                    solution: Some(path.current_assignments),
-                    stats: stats,
-                };
-            }
-
-            // If we didn't find a solution, but we didn't hit any violated constraints, we can try unit propagation
-            // println!("dfs step evaluated. free clauses: {}", free_clauses.len(),);
-            match self.do_unit_propagation(&mut clause_index, &mut path, &mut kg) {
-                IterationResult::Backtracked(None) => {
-                    return Solution {
-                        literals: self.variables.clone(),
-                        solution: None,
-                        stats,
-                    };
-                }
-                IterationResult::Backtracked(Some(_)) => continue,
-                IterationResult::Ok => (),
             }
 
             if clause_index.all_clauses_resolved() {
                 return Solution {
                     literals: self.variables.clone(),
-                    solution: Some(path.current_assignments),
+                    solution: Some(dfs_path.assignment().clone()),
                     stats: stats,
                 };
             }
 
             // Now, keep stepping into the problem
-            if let Some(var) = traversal_plan.next(&path) {
-                let lit = Literal::new(*var, true);
+            if let Some(&var) = traversal_plan.next(&dfs_path) {
+                let lit = Literal::new(var, true);
                 stats.step_count += 1;
-                path.step(&mut clause_index, lit);
-                kg.add_decision(lit);
+                dfs_path.add_decision(lit);
+                knowledge_graph.add_decision(lit);
+                clause_index.mark_resolved(var)
             } else {
                 // If we can't keep going, we're done, i guess. Iterate one more time
                 continue;
             }
         }
+    }
+
+    fn backtrack_and_pivot(&self, conflict: Conflict, path: &mut DFSPath, clause_index: &mut ClauseIndex, knowledge_graph: &mut KnowledgeGraph) -> Option<()> {
+        let backtracked = path.backtrack();
+        // if there was no decision before we backtracked.. we ran out. EOF. over.
+        let last_decision = match backtracked.last_decision {
+            None => return None,
+            Some(decision) => decision,
+        };
+
+        // Rollback the assignments
+        for lit in backtracked.assignments.iter() {
+            clause_index.mark_unresolved(lit.var());
+        }
+
+        // Find the next place to go
+        let pivot = last_decision.invert();
+
+        path.add_decision(pivot);
+        clause_index.mark_resolved(pivot.var());
+        knowledge_graph.add_decision(pivot);
+
+        Some(())
     }
 }
 
@@ -365,7 +203,7 @@ impl fmt::Debug for Solution {
 mod test {
     use crate::{
         problem_builder::ProblemBuilder,
-        solver::{clause_index::ClauseIndex, dfs::SearchPath},
+        solver::{clause_index::ClauseIndex},
         *,
     };
 

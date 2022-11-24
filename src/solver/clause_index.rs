@@ -138,6 +138,17 @@ impl<'a> ClauseIndex<'a> {
             .filter(|cl| cl.len() == 1)
             .collect()
     }
+
+    pub(crate) fn find_unit_clauses_containing_var(&self, var: Variable) -> Vec<&'a Clause> {
+        match self.by_var.get(&var) {
+            None => vec![],
+            Some(clause_ixes) => clause_ixes
+                .iter()
+                .filter(|&&ix| self.clause_states[ix].clause.is_unit())
+                .map(|&ix| self.clause_states[ix].clause)
+                .collect(),
+        }
+    }
 }
 
 impl<'a> fmt::Debug for ClauseIndex<'a> {

@@ -4,39 +4,40 @@ use crate::instance::*;
 
 use super::assignment_set::EvaluationResult;
 use super::clause_index::ClauseIndex;
-use super::dfs::SearchPath;
+use super::dfs_path::DFSPath;
 use super::knowledge_graph::KnowledgeGraph;
 
 // c -> clauses
 // a -> other junk
 pub(crate) struct UnitPropagator<'a, 'c: 'a> {
     clause_index: &'a mut ClauseIndex<'c>,
-    search_path: &'a mut SearchPath,
+    dfs_path: &'a mut DFSPath,
     knowledge_graph: &'a mut KnowledgeGraph,
 }
 
 impl<'a, 'c> UnitPropagator<'a, 'c> {
     pub(crate) fn new(
         clause_index: &'a mut ClauseIndex<'c>,
-        search_path: &'a mut SearchPath,
+        dfs_path: &'a mut DFSPath,
         knowledge_graph: &'a mut KnowledgeGraph,
     ) -> UnitPropagator<'a, 'c> {
         UnitPropagator {
-            clause_index: clause_index,
-            search_path: search_path,
-            knowledge_graph: knowledge_graph,
+            clause_index,
+            dfs_path,
+            knowledge_graph,
         }
     }
 
     pub(crate) fn evaluate(&'a self) -> Option<Conflict<'c>> {
         // So we run through the untested literals, and check all of the relevant candidate clauses.
         // If any of them are invalid, return the conflict
-        for &literal in self.search_path.assignments_since_last_step() {
+        let untested_literals = self.dfs_path.assignments_since_last_decision().as_assignment_vec();
+        for &literal in untested_literals.iter() {
             for clause in self.clause_index.find_evaluatable_candidates(literal) {
-                match self.search_path.assignment().evaluate(clause) {
+                match self.dfs_path.assignment().evaluate(clause) {
                     EvaluationResult::False => {
                         return Some(Conflict {
-                            literal: literal,
+                            literal,
                             conflicting_clause: clause,
                         });
                     }
@@ -48,33 +49,13 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
         None
     }
 
-    pub(crate) fn initial_unit_propagation(&mut self) -> Option<Conflict<'c>> {
-        let mut literals: Vec<Literal> = self
-            .clause_index
-            .find_unit_clauses()
-            .iter()
-            .map(|cl| cl.literals()[0])
-            .collect();
-        literals.sort();
-        literals.dedup();
-        eprintln!("unit clauses: {:?}", literals);
-        for literal in literals {
-            self.search_path.add_inferred(literal);
-            self.clause_index.mark_resolved(literal.var());
-            // Questionable semantics, but whatever.
-            self.knowledge_graph.add_decision(literal);
-        }
-
-        self.propagate_units()
-    }
-
     pub(crate) fn propagate_units(&mut self) -> Option<Conflict<'c>> {
         let mut queue = VecDeque::new();
-        queue.extend(self.search_path.assignments_since_last_step());
+        queue.extend(self.dfs_path.assignments_since_last_decision().as_assignment_vec());
         eprintln!("q: {:?}", queue);
 
         while !queue.is_empty() {
-            println!("assignment: {:?}", self.search_path.assignment());
+            println!("assignment: {:?}", self.dfs_path.assignment());
 
             let literal = queue.pop_back().unwrap();
             println!("lit: {:?}", literal);
@@ -95,7 +76,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
             inferred_literals.sort();
             inferred_literals.dedup();
             for inferred in &inferred_literals {
-                self.search_path.add_inferred(*inferred);
+                self.dfs_path.add_inferred(*inferred);
                 self.clause_index.mark_resolved(inferred.var());
             }
             queue.extend(inferred_literals);
@@ -123,7 +104,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
     // }
 
     fn propagate_unit(&self, literal: Literal, clause: &'c Clause) -> PropagationResult<'c> {
-        let assignment = self.search_path.assignment();
+        let assignment = self.dfs_path.assignment();
 
         let mut last_unknown = None;
         for literal in clause.literals() {
@@ -159,6 +140,43 @@ pub(crate) struct Conflict<'a> {
     pub(crate) conflicting_clause: &'a Clause,
 }
 
+pub(crate) fn find_inital_assignment<'a, 'c>(
+    clause_index: &'a mut ClauseIndex<'c>,
+    knowledge_graph: &'a mut KnowledgeGraph,
+) -> InitialAssignmentResult<'c> {
+        let mut literals: Vec<Literal> = clause_index
+            .find_unit_clauses()
+            .iter()
+            .map(|cl| cl.literals()[0])
+            .collect();
+        literals.sort();
+        literals.dedup();
+        for window in literals.windows(2) {
+            let lit_a = window[0];
+            let lit_b = window[1];
+            if lit_a.var() == lit_b.var() {
+                let relevant_clauses = clause_index.find_unit_clauses_containing_var(lit_a.var());
+                return InitialAssignmentResult::Conflict(Conflict {
+                    literal: lit_a, 
+                    conflicting_clause: relevant_clauses[0],
+                })
+            }
+        }
+        eprintln!("unit clauses: {:?}", literals);
+        for &literal in literals.iter() {
+            clause_index.mark_resolved(literal.var());
+            // Questionable semantics, but whatever.
+            knowledge_graph.add_decision(literal);
+        }
+        InitialAssignmentResult::Assignment(literals)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InitialAssignmentResult<'c> {
+    Conflict(Conflict<'c>),
+    Assignment(Vec<Literal>),
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
@@ -169,7 +187,7 @@ mod test {
             clause_index::{self, ClauseIndex},
             knowledge_graph::{self, KnowledgeGraph},
             unit_propagator::{self, UnitPropagator},
-            SearchPath,
+            dfs_path::DFSPath,
         },
         *,
     };
@@ -229,13 +247,16 @@ mod test {
         let clauses = vec![clause];
 
         let mut clause_index = ClauseIndex::new(&clauses);
-        let mut search_path = SearchPath::new();
+        let mut dfs_path = DFSPath::new(LiteralSet::new());
         let mut knowledge_graph = KnowledgeGraph::new();
 
-        search_path.step(&mut clause_index, Literal::new(a, false));
+        let decision = Literal::new(a, false);
+        dfs_path.add_decision(decision);
+        clause_index.mark_resolved(a);
+        knowledge_graph.add_decision(decision);
 
         let mut unit_propagator =
-            UnitPropagator::new(&mut clause_index, &mut search_path, &mut knowledge_graph);
+            UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
 
         let result = unit_propagator.propagate_units();
 
@@ -256,13 +277,16 @@ mod test {
         let clauses = vec![clause_one, clause_two];
 
         let mut clause_index = ClauseIndex::new(&clauses);
-        let mut search_path = SearchPath::new();
+        let mut dfs_path = DFSPath::new(LiteralSet::new());
         let mut knowledge_graph = KnowledgeGraph::new();
 
-        search_path.step(&mut clause_index, Literal::new(a, false));
+        let decision = Literal::new(a, false);
+        dfs_path.add_decision(decision);
+        clause_index.mark_resolved(a);
+        knowledge_graph.add_decision(decision);
 
         let mut unit_propagator =
-            UnitPropagator::new(&mut clause_index, &mut search_path, &mut knowledge_graph);
+            UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
 
         let result = unit_propagator.propagate_units();
 
