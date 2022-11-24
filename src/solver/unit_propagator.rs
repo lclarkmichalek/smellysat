@@ -77,7 +77,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                         self.knowledge_graph.add_inferred(inferred, clause);
                         inferred_literals.push(inferred);
                     }
-                    _ => panic!("Failed unit prop??"),
+                    PropagationResult::Failed => (),
                 }
             }
             inferred_literals.sort();
@@ -117,10 +117,8 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
         for literal in clause.literals() {
             if let Some(ass_sign) = assignment.get(literal.var()) {
                 if ass_sign == literal.polarity() {
-                    return PropagationResult::Conflicted(Conflict {
-                        literal: *literal,
-                        conflicting_clause: clause,
-                    });
+                    // If there is a matching literal, we can't say anything about the free variable
+                    return PropagationResult::Failed;
                 }
             } else {
                 if last_unknown != None {
@@ -270,7 +268,6 @@ mod test {
         let result = unit_propagator.propagate_units();
 
         assert_eq!(result, None);
-        assert!(false);
     }
 
     #[test]
@@ -300,7 +297,6 @@ mod test {
         let result = unit_propagator.propagate_units();
 
         assert_eq!(result, None);
-        assert!(false);
     }
 
     // #[test]

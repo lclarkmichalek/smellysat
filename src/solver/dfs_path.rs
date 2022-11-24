@@ -1,5 +1,5 @@
-use core::fmt;
 use crate::instance::*;
+use core::fmt;
 
 use super::assignment_set::LiteralSet;
 
@@ -44,7 +44,7 @@ impl DFSPath {
     pub(crate) fn assignments_since_last_decision(&self) -> &LiteralSet {
         match self.path.last() {
             Some(entry) => &entry.all,
-            None => &self.initial_assignment
+            None => &self.initial_assignment,
         }
     }
 
@@ -62,14 +62,14 @@ impl DFSPath {
 
         self.assignment.add(literal);
         match self.path.last_mut() {
-            Some(last_step) =>  {
+            Some(last_step) => {
                 last_step.inferred.push(literal);
                 last_step.all.add(literal);
-            },
+            }
             None => {
                 // Ok, now shits getting fucky. If we've inferred something without taking a step,
                 // then presumably we're in the first round of unit prop. Cosequentially, it's
-                // really part of the initial assignment. 
+                // really part of the initial assignment.
                 self.initial_assignment.add(literal);
             }
         }

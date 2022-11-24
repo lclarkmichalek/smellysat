@@ -100,6 +100,7 @@ impl Instance {
 
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
             if let Some(conflict) = prop_eval_result {
+                eprintln!("conflict: {:?}", conflict);
                 match self.backtrack_and_pivot(
                     conflict,
                     &mut dfs_path,
@@ -213,8 +214,9 @@ impl fmt::Debug for Solution {
 mod test {
     use crate::{
         problem_builder::ProblemBuilder,
-        solver::{Instance, assignment_set::LiteralSet},
-        *, variable_registry::VariableRegister,
+        solver::{assignment_set::LiteralSet, Instance},
+        variable_registry::VariableRegister,
+        *,
     };
 
     // This test starts with a satisfiable formula (A OR B), and then goes into an unsatisfiable formula.
@@ -300,7 +302,30 @@ mod test {
 
         let mut instance = Instance::new_from_clauses(clauses, vr);
         let solution = instance.solve();
-        
+
+        let mut expected = LiteralSet::new();
+        expected.add(Literal::new(a, true));
+        expected.add(Literal::new(b, true));
+        expected.add(Literal::new(c, true));
+        assert_eq!(solution.solution, Some(expected));
+    }
+
+    // This test requires the solver to step into a=true, and then use unit prop to resolve the other variables
+    #[test]
+    fn test_build_and_solve_feasible_one_step_and_prop() {
+        let mut vr = VariableRegister::new();
+        let a = vr.create_original("a");
+        let b = vr.create_original("b");
+        let c = vr.create_original("c");
+        let clauses = vec![
+            Clause::new(&vec![Literal::new(a, true), Literal::new(b, true)]),
+            Clause::new(&vec![Literal::new(a, false), Literal::new(b, true)]),
+            Clause::new(&vec![Literal::new(b, false), Literal::new(c, true)]),
+        ];
+
+        let mut instance = Instance::new_from_clauses(clauses, vr);
+        let solution = instance.solve();
+
         let mut expected = LiteralSet::new();
         expected.add(Literal::new(a, true));
         expected.add(Literal::new(b, true));
