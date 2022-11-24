@@ -203,40 +203,9 @@ impl fmt::Debug for Solution {
 mod test {
     use crate::{
         problem_builder::ProblemBuilder,
-        solver::{clause_index::ClauseIndex},
+        solver::{clause_index::ClauseIndex, dfs_path::DFSPath},
         *,
     };
-
-    #[test]
-    fn test_search_path_bookkeeping() {
-        let mut sp = SearchPath::new();
-        let clauses = vec![];
-        let mut ci = ClauseIndex::new(&clauses);
-        let a = Variable(0);
-        let b = Variable(1);
-        let c = Variable(2);
-
-        sp.step(&mut ci, Literal::new(a, true));
-        assert_eq!(sp.depth(), 1);
-        assert_eq!(sp.size(), 1);
-
-        sp.step(&mut ci, Literal::new(b, true));
-        sp.add_inferred(Literal::new(c, false));
-        assert_eq!(sp.depth(), 2);
-        assert_eq!(sp.size(), 3);
-
-        sp.backtrack(&mut ci);
-        assert_eq!(sp.depth(), 1);
-        assert_eq!(sp.size(), 1);
-
-        sp.step(&mut ci, Literal::new(b, true));
-        assert_eq!(sp.depth(), 2);
-        assert_eq!(sp.size(), 2);
-
-        sp.backtrack_and_pivot(&mut ci);
-        assert_eq!(sp.depth(), 2);
-        assert_eq!(sp.size(), 2);
-    }
 
     // This test starts with a satisfiable formula (A OR B), and then goes into an unsatisfiable formula.
     #[test]

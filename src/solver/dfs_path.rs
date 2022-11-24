@@ -22,6 +22,13 @@ impl DFSPath {
         }
     }
 
+    pub(crate) fn empty() -> DFSPath {
+        DFSPath {
+            path: vec![],
+            assignment: LiteralSet::new()
+        }
+    }
+
     /// The number of decisions taken, minus decisions backtracked
     pub(crate) fn depth(&self) -> usize {
         self.path.len()
