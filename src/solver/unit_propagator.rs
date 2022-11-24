@@ -31,7 +31,10 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
     pub(crate) fn evaluate(&'a self) -> Option<Conflict<'c>> {
         // So we run through the untested literals, and check all of the relevant candidate clauses.
         // If any of them are invalid, return the conflict
-        let untested_literals = self.dfs_path.assignments_since_last_decision().as_assignment_vec();
+        let untested_literals = self
+            .dfs_path
+            .assignments_since_last_decision()
+            .as_assignment_vec();
         for &literal in untested_literals.iter() {
             for clause in self.clause_index.find_evaluatable_candidates(literal) {
                 match self.dfs_path.assignment().evaluate(clause) {
@@ -51,7 +54,11 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
 
     pub(crate) fn propagate_units(&mut self) -> Option<Conflict<'c>> {
         let mut queue = VecDeque::new();
-        queue.extend(self.dfs_path.assignments_since_last_decision().as_assignment_vec());
+        queue.extend(
+            self.dfs_path
+                .assignments_since_last_decision()
+                .as_assignment_vec(),
+        );
         eprintln!("q: {:?}", queue);
 
         while !queue.is_empty() {
@@ -144,31 +151,31 @@ pub(crate) fn find_inital_assignment<'a, 'c>(
     clause_index: &'a mut ClauseIndex<'c>,
     knowledge_graph: &'a mut KnowledgeGraph,
 ) -> InitialAssignmentResult<'c> {
-        let mut literals: Vec<Literal> = clause_index
-            .find_unit_clauses()
-            .iter()
-            .map(|cl| cl.literals()[0])
-            .collect();
-        literals.sort();
-        literals.dedup();
-        for window in literals.windows(2) {
-            let lit_a = window[0];
-            let lit_b = window[1];
-            if lit_a.var() == lit_b.var() {
-                let relevant_clauses = clause_index.find_unit_clauses_containing_var(lit_a.var());
-                return InitialAssignmentResult::Conflict(Conflict {
-                    literal: lit_a, 
-                    conflicting_clause: relevant_clauses[0],
-                })
-            }
+    let mut literals: Vec<Literal> = clause_index
+        .find_unit_clauses()
+        .iter()
+        .map(|cl| cl.literals()[0])
+        .collect();
+    literals.sort();
+    literals.dedup();
+    for window in literals.windows(2) {
+        let lit_a = window[0];
+        let lit_b = window[1];
+        if lit_a.var() == lit_b.var() {
+            let relevant_clauses = clause_index.find_unit_clauses_containing_var(lit_a.var());
+            return InitialAssignmentResult::Conflict(Conflict {
+                literal: lit_a,
+                conflicting_clause: relevant_clauses[0],
+            });
         }
-        eprintln!("unit clauses: {:?}", literals);
-        for &literal in literals.iter() {
-            clause_index.mark_resolved(literal.var());
-            // Questionable semantics, but whatever.
-            knowledge_graph.add_decision(literal);
-        }
-        InitialAssignmentResult::Assignment(literals)
+    }
+    eprintln!("unit clauses: {:?}", literals);
+    for &literal in literals.iter() {
+        clause_index.mark_resolved(literal.var());
+        // Questionable semantics, but whatever.
+        knowledge_graph.add_decision(literal);
+    }
+    InitialAssignmentResult::Assignment(literals)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,9 +192,9 @@ mod test {
         solver::{
             assignment_set::{EvaluationResult, LiteralSet},
             clause_index::{self, ClauseIndex},
+            dfs_path::DFSPath,
             knowledge_graph::{self, KnowledgeGraph},
             unit_propagator::{self, UnitPropagator},
-            dfs_path::DFSPath,
         },
         *,
     };

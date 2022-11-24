@@ -1,6 +1,6 @@
 mod assignment_set;
-mod dfs_path;
 mod clause_index;
+mod dfs_path;
 mod knowledge_graph;
 mod unit_propagator;
 

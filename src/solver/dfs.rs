@@ -4,14 +4,13 @@ use std::rc::Rc;
 use crate::instance::*;
 use crate::solver::dfs;
 use crate::solver::dfs_path::DFSPath;
-use crate::solver::knowledge_graph::{KnowledgeGraph, self};
-use crate::solver::unit_propagator::{InitialAssignmentResult, find_inital_assignment, Conflict};
+use crate::solver::knowledge_graph::{self, KnowledgeGraph};
+use crate::solver::unit_propagator::{find_inital_assignment, Conflict, InitialAssignmentResult};
 use crate::variable_registry::VariableRegister;
 
 use super::assignment_set::LiteralSet;
 use super::clause_index::ClauseIndex;
 use super::unit_propagator::UnitPropagator;
-
 
 #[derive(Debug, Clone)]
 struct TraversalPath {
@@ -70,15 +69,22 @@ impl Instance {
         let mut knowledge_graph = KnowledgeGraph::new();
 
         let mut dfs_path = match find_inital_assignment(&mut clause_index, &mut knowledge_graph) {
-            InitialAssignmentResult::Conflict(conflict) => return Solution {
-                literals: self.variables.clone(),
-                solution: None,
-                stats
-            },
-            InitialAssignmentResult::Assignment(vars) => DFSPath::new(LiteralSet::from_assignment_vec(&vars))
+            InitialAssignmentResult::Conflict(conflict) => {
+                return Solution {
+                    literals: self.variables.clone(),
+                    solution: None,
+                    stats,
+                }
+            }
+            InitialAssignmentResult::Assignment(vars) => {
+                DFSPath::new(LiteralSet::from_assignment_vec(&vars))
+            }
         };
 
-        println!("inferred {} units pre traversal", dfs_path.assignment().size());
+        println!(
+            "inferred {} units pre traversal",
+            dfs_path.assignment().size()
+        );
 
         if clause_index.all_clauses_resolved() {
             return Solution {
@@ -99,17 +105,25 @@ impl Instance {
 
         loop {
             // println!("evaluating with {:?} vars", path.current_assignments.size());
-            let mut unit_prop = UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
+            let mut unit_prop =
+                UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
 
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
             if let Some(conflict) = prop_eval_result {
-                match self.backtrack_and_pivot(conflict, &mut dfs_path, &mut clause_index, &mut knowledge_graph) {
-                    None => return Solution {
-                        literals: self.variables.clone(),
-                        solution: None,
-                        stats,
-                    },
-                    Some(_) => ()
+                match self.backtrack_and_pivot(
+                    conflict,
+                    &mut dfs_path,
+                    &mut clause_index,
+                    &mut knowledge_graph,
+                ) {
+                    None => {
+                        return Solution {
+                            literals: self.variables.clone(),
+                            solution: None,
+                            stats,
+                        }
+                    }
+                    Some(_) => continue,
                 }
             }
 
@@ -135,7 +149,13 @@ impl Instance {
         }
     }
 
-    fn backtrack_and_pivot(&self, conflict: Conflict, path: &mut DFSPath, clause_index: &mut ClauseIndex, knowledge_graph: &mut KnowledgeGraph) -> Option<()> {
+    fn backtrack_and_pivot(
+        &self,
+        conflict: Conflict,
+        path: &mut DFSPath,
+        clause_index: &mut ClauseIndex,
+        knowledge_graph: &mut KnowledgeGraph,
+    ) -> Option<()> {
         let backtracked = path.backtrack();
         // if there was no decision before we backtracked.. we ran out. EOF. over.
         let last_decision = match backtracked.last_decision {
