@@ -1,44 +1,55 @@
-use fnv::{FnvHashMap, FnvHashSet};
 use log::trace;
 
 use crate::instance::*;
 
 // As we process and make deductions (through unit propogation), we would like to store the graph. This is the global knowledge graph.
-pub(crate) struct KnowledgeGraph {
-    vertices: FnvHashSet<Literal>,
-    decisions: FnvHashSet<Literal>,
-    // From A to B, where B is inferred
-    edge_to: FnvHashMap<Literal, Literal>,
-    // From B to A, where B is inferred
-    edge_from: FnvHashMap<Literal, Literal>,
+pub(crate) struct KnowledgeGraph<'c> {
+    vertices: Vec<Node<'c>>,
 }
 
-impl KnowledgeGraph {
-    pub(crate) fn new() -> KnowledgeGraph {
+impl<'c> KnowledgeGraph<'c> {
+    pub(crate) fn new(variable_count: usize) -> KnowledgeGraph<'c> {
         KnowledgeGraph {
-            vertices: FnvHashSet::default(),
-            decisions: FnvHashSet::default(),
-            edge_to: FnvHashMap::default(),
-            edge_from: FnvHashMap::default(),
+            vertices: (0..variable_count)
+                .map(|_| Node {
+                    trigger: None,
+                    decision: None,
+                    clause: None,
+                })
+                .collect(),
         }
     }
 
     pub(crate) fn add_decision(&mut self, decision: Literal) {
         trace!("decision: {:?}", decision);
-        self.vertices.insert(decision);
-        self.decisions.insert(decision);
+        let ix = decision.var().index() as usize;
+        let mut v = self.vertices.get_mut(ix).unwrap();
+        v.trigger = Some(decision.var());
+        v.decision = Some(decision.var());
+        v.clause = None;
     }
 
-    pub(crate) fn add_inferred(&mut self, inferred: Literal, clause: &Clause) {
+    pub(crate) fn add_inferred(
+        &mut self,
+        inferred: Literal,
+        trigger: Literal,
+        decision: Option<Literal>,
+        clause: &'c Clause,
+    ) {
         trace!("inference: {:?}", inferred);
-        self.vertices.insert(inferred);
-        for &literal in clause.literals() {
-            if literal == inferred {
-                continue;
-            }
-
-            self.edge_to.insert(literal, inferred);
-            self.edge_from.insert(literal, inferred);
-        }
+        let ix = inferred.var().index() as usize;
+        let mut v = self.vertices.get_mut(ix).unwrap();
+        v.trigger = Some(trigger.var());
+        v.decision = decision.map(|l| l.var());
+        v.clause = Some(clause);
     }
+}
+
+struct Node<'c> {
+    // The decision or inference that enabled unit prop to arrive here
+    trigger: Option<Variable>,
+    // The last decision made before unit prop arrived here
+    decision: Option<Variable>,
+    // The clause that allowed us to infer our way here
+    clause: Option<&'c Clause>,
 }

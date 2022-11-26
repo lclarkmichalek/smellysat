@@ -8,3 +8,9 @@ impl fmt::Debug for Variable {
         write!(f, "x{}", self.0)
     }
 }
+
+impl Variable {
+    pub(crate) fn index(&self) -> u64 {
+        self.0
+    }
+}

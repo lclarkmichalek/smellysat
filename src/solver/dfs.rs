@@ -70,7 +70,7 @@ impl Instance {
         };
 
         let mut clause_index = ClauseIndex::new(&self.clauses);
-        let mut knowledge_graph = KnowledgeGraph::new();
+        let mut knowledge_graph = KnowledgeGraph::new(self.variables.count());
 
         let mut dfs_path = match find_inital_assignment(&mut clause_index, &mut knowledge_graph) {
             InitialAssignmentResult::Conflict(_conflict) => {

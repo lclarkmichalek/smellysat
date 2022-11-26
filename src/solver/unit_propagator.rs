@@ -15,14 +15,14 @@ use super::knowledge_graph::KnowledgeGraph;
 pub(crate) struct UnitPropagator<'a, 'c: 'a> {
     clause_index: &'a mut ClauseIndex<'c>,
     dfs_path: &'a mut DFSPath,
-    knowledge_graph: &'a mut KnowledgeGraph,
+    knowledge_graph: &'a mut KnowledgeGraph<'c>,
 }
 
 impl<'a, 'c> UnitPropagator<'a, 'c> {
     pub(crate) fn new(
         clause_index: &'a mut ClauseIndex<'c>,
         dfs_path: &'a mut DFSPath,
-        knowledge_graph: &'a mut KnowledgeGraph,
+        knowledge_graph: &'a mut KnowledgeGraph<'c>,
     ) -> UnitPropagator<'a, 'c> {
         UnitPropagator {
             clause_index,
@@ -81,7 +81,12 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                         // Important: propagate_unit takes its assignment from dfs_path. Deferring
                         // adding to the dfs path causes issues
                         self.dfs_path.add_inferred(inferred);
-                        self.knowledge_graph.add_inferred(inferred, clause);
+                        self.knowledge_graph.add_inferred(
+                            inferred,
+                            literal,
+                            self.dfs_path.last_decision(),
+                            clause,
+                        );
                         self.clause_index.mark_resolved(inferred.var());
                         inferred_literals.push(inferred);
                     }
@@ -239,7 +244,7 @@ mod test {
 
         let mut clause_index = ClauseIndex::new(&clauses);
         let mut dfs_path = DFSPath::new(LiteralSet::new());
-        let mut knowledge_graph = KnowledgeGraph::new();
+        let mut knowledge_graph = KnowledgeGraph::new(2);
 
         let decision = Literal::new(a, false);
         dfs_path.add_decision(decision);
@@ -268,7 +273,7 @@ mod test {
 
         let mut clause_index = ClauseIndex::new(&clauses);
         let mut dfs_path = DFSPath::new(LiteralSet::new());
-        let mut knowledge_graph = KnowledgeGraph::new();
+        let mut knowledge_graph = KnowledgeGraph::new(2);
 
         let decision = Literal::new(a, false);
         dfs_path.add_decision(decision);

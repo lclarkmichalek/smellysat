@@ -64,4 +64,8 @@ impl VariableRegister {
     pub fn iter_original(&self) -> impl Iterator<Item = Variable> + '_ {
         self.original_variables.iter().map(|ix| Variable(*ix))
     }
+
+    pub fn count(&self) -> usize {
+        self.variables.len()
+    }
 }
