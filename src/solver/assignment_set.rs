@@ -93,7 +93,6 @@ mod test {
     use crate::{
         instance::*,
         solver::assignment_set::{EvaluationResult, LiteralSet},
-        *,
     };
 
     #[test]
@@ -140,89 +139,4 @@ mod test {
         let c = Clause::new(&vec![Literal::new(Variable(0), true)]);
         assert_eq!(LiteralSet::new().evaluate(&c), EvaluationResult::Unknown)
     }
-
-    // #[test]
-    // fn test_unit_prop_unit() {
-    //     let lit = Literal::new(Variable(0), true);
-    //     let clause = Clause::new(&vec![lit]);
-    //     assert_eq!(LiteralSet::new().unit_prop(&clause), Some(lit));
-    // }
-
-    // #[test]
-    // fn test_unit_prop_single_free() {
-    //     let x = Literal::new(Variable(0), true);
-    //     let y = Literal::new(Variable(1), true);
-    //     let clause = Clause::new(&vec![x.invert(), y]);
-    //     let mut ass = LiteralSet::new();
-    //     ass.add(x);
-    //     assert_eq!(ass.unit_prop(&clause), Some(y));
-    // }
-
-    // #[test]
-    // fn test_unit_prop_multiple_free() {
-    //     let x = Literal::new(Variable(0), true);
-    //     let y = Literal::new(Variable(1), true);
-    //     let clause = Clause::new(&vec![x.invert(), y]);
-    //     let ass = LiteralSet::new();
-    //     assert_eq!(ass.unit_prop(&clause), None);
-    // }
-
-    // #[test]
-    // fn test_unit_prop_true() {
-    //     let x = Literal::new(Variable(0), true);
-    //     let y = Literal::new(Variable(1), true);
-    //     let clause = Clause::new(&vec![x, y]);
-    //     let mut ass = LiteralSet::new();
-    //     ass.add(x);
-    //     assert_eq!(ass.unit_prop(&clause), None);
-    // }
-
-    // #[test]
-    // fn test_unit_prop_scenario_two_unknown() {
-    //     let mut pb = ProblemBuilder::new();
-    //     let x = pb.var("x");
-    //     let y = pb.var("y");
-
-    //     // With x set, unit propagation should result in y being inferred to be true
-    //     pb.require(pb.and(x, y));
-
-    //     let instance = pb.build();
-    //     // Build an assignment with x = true
-    //     let x_lit = instance.variables.get_by_name("x").unwrap();
-    //     let mut ass = LiteralSet::from_assignment_vec(&vec![Literal::new(x_lit, true)]);
-
-    //     // We should now get at least one instance of unit propagation across all the clauses
-    //     let mut propagation_count = 0;
-    //     for clause in &instance.clauses {
-    //         let result = ass.unit_prop(clause);
-    //         println!("prop result: {:?}", result);
-    //         if result != None {
-    //             propagation_count += 1;
-    //         }
-    //     }
-    //     assert_ne!(propagation_count, 0);
-
-    //     // Furthermore, we should be able to solve the whole problem using unit prop only
-    //     for _i in 0..100 {
-    //         let mut all_pass = true;
-    //         for clause in &instance.clauses {
-    //             match ass.evaluate(clause) {
-    //                 EvaluationResult::True => (),
-    //                 EvaluationResult::False => assert!(false, "conflict during solve??"),
-    //                 EvaluationResult::Unknown => {
-    //                     all_pass = false;
-    //                     if let Some(result) = ass.unit_prop(clause) {
-    //                         println!("adding {:?} to result", result);
-    //                         ass.add(result)
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         if all_pass {
-    //             // We solved the problem through unit propagation alone!
-    //             return;
-    //         }
-    //     }
-    //     assert!(false, "did not solve problem through unit propagation")
-    // }
 }

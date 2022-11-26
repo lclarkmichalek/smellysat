@@ -74,8 +74,8 @@ pub fn parse(filename: &str) -> Result<Instance> {
 
 #[derive(Debug, Clone)]
 struct DimacsHeader {
-    var_count: u64,
-    clause_count: u64,
+    _var_count: u64,
+    _clause_count: u64,
 }
 
 impl DimacsHeader {
@@ -96,8 +96,8 @@ impl DimacsHeader {
         let var_count = next()?;
         let clause_count = next()?;
         Ok(Self {
-            var_count: var_count.parse::<u64>()?,
-            clause_count: clause_count.parse::<u64>()?,
+            _var_count: var_count.parse::<u64>()?,
+            _clause_count: clause_count.parse::<u64>()?,
         })
     }
 }

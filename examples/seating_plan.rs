@@ -13,8 +13,8 @@ fn main() {
     let mut by_child = HashMap::new();
     let mut by_seat = HashMap::new();
 
-    for (i, child) in children.iter().enumerate() {
-        for (j, seat) in seats.iter().enumerate() {
+    for child in children.iter() {
+        for seat in seats.iter() {
             let var = pb.var(&format!("{}X{}", &child, &seat));
             by_child
                 .entry(child)

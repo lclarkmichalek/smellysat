@@ -23,14 +23,6 @@ impl DFSPath {
         }
     }
 
-    pub(crate) fn empty() -> DFSPath {
-        DFSPath {
-            path: vec![],
-            initial_assignment: LiteralSet::new(),
-            assignment: LiteralSet::new(),
-        }
-    }
-
     /// The number of decisions taken, minus decisions backtracked
     pub(crate) fn depth(&self) -> usize {
         self.path.len()
@@ -180,7 +172,7 @@ pub(crate) struct BacktrackResult {
 
 #[cfg(test)]
 mod test {
-    use crate::{instance::*, solver::dfs_path::*};
+    use crate::{solver::dfs_path::*};
 
     #[test]
     fn test_bookkeeping() {

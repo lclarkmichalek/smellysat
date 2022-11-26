@@ -42,11 +42,3 @@ impl KnowledgeGraph {
         }
     }
 }
-
-struct ImplicationTrail {
-    trigger_decision: Literal,
-    relevant_decisions: Vec<Literal>,
-    trail: Vec<Literal>,
-}
-
-impl ImplicationTrail {}

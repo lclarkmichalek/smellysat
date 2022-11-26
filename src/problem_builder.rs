@@ -93,10 +93,10 @@ impl BoolExpr {
     }
 }
 
+#[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_build_unary_problem() {
@@ -132,8 +132,8 @@ mod test {
         let mut by_child = HashMap::new();
         let mut by_seat = HashMap::new();
 
-        for (i, child) in children.iter().enumerate() {
-            for (j, seat) in seats.iter().enumerate() {
+        for child in children.iter() {
+            for seat in seats.iter() {
                 let var = pb.var(&format!("{}x{}", &child, &seat));
                 by_child
                     .entry(child)

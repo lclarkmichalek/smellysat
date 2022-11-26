@@ -1,11 +1,11 @@
 use std::fmt;
 use std::rc::Rc;
 
-use log::{trace, info};
+use log::{trace};
 
 use crate::instance::*;
 use crate::solver::dfs_path::DFSPath;
-use crate::solver::knowledge_graph::{self, KnowledgeGraph};
+use crate::solver::knowledge_graph::{KnowledgeGraph};
 use crate::solver::unit_propagator::{find_inital_assignment, Conflict, InitialAssignmentResult};
 use crate::variable_registry::VariableRegister;
 
@@ -25,11 +25,6 @@ impl TraversalPath {
             .filter(|&&l| path.assignment().get(l).is_none())
             .next()
     }
-}
-
-enum IterationResult {
-    Ok,
-    Backtracked(Option<()>),
 }
 
 #[derive(Clone)]
@@ -58,9 +53,9 @@ impl Instance {
     pub fn solve(&mut self) -> Solution {
         let mut stats = EvaluationStats {
             step_count: 0,
+            initial_unit_count: 0,
             unit_prop_count: 0,
-            backtrack_from_violation_count: 0,
-            backtrack_from_conflict_count: 0,
+            backtrack_count: 0,
         };
         let traversal_plan = TraversalPath {
             variables: self.variables.clone(),
@@ -70,7 +65,7 @@ impl Instance {
         let mut knowledge_graph = KnowledgeGraph::new();
 
         let mut dfs_path = match find_inital_assignment(&mut clause_index, &mut knowledge_graph) {
-            InitialAssignmentResult::Conflict(conflict) => {
+            InitialAssignmentResult::Conflict(_conflict) => {
                 return Solution {
                     literals: self.variables.clone(),
                     solution: None,
@@ -82,27 +77,25 @@ impl Instance {
             }
         };
 
-        info!(
-            "inferred {} units pre traversal",
-            dfs_path.assignment().size()
-        );
+        stats.initial_unit_count = dfs_path.assignment().size();
 
         if clause_index.all_clauses_resolved() {
             return Solution {
                 literals: self.variables.clone(),
                 solution: Some(dfs_path.assignment().clone()),
-                stats: stats,
+                stats,
             };
         }
 
         loop {
-            // println!("evaluating with {:?} vars", path.current_assignments.size());
             let mut unit_prop =
                 UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
 
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
+            stats.unit_prop_count += dfs_path.assignments_since_last_decision().size();
             if let Some(conflict) = prop_eval_result {
                 trace!("conflict: {:?}", conflict);
+                stats.backtrack_count += 1;
                 match self.backtrack_and_pivot(
                     conflict,
                     &mut dfs_path,
@@ -144,7 +137,7 @@ impl Instance {
 
     fn backtrack_and_pivot(
         &self,
-        conflict: Conflict,
+        _conflict: Conflict,
         path: &mut DFSPath,
         clause_index: &mut ClauseIndex,
         knowledge_graph: &mut KnowledgeGraph,
@@ -175,9 +168,9 @@ impl Instance {
 #[derive(Clone, Debug)]
 pub struct EvaluationStats {
     step_count: usize,
+    initial_unit_count: usize,
     unit_prop_count: usize,
-    backtrack_from_violation_count: usize,
-    backtrack_from_conflict_count: usize,
+    backtrack_count: usize,
 }
 
 #[derive(Clone)]
