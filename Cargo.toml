@@ -9,6 +9,11 @@ edition = "2021"
 thiserror = "1.0"
 fnv = "1.0.3"
 prometheus = "0.13.3"
+log = "0.4.17"
 
 [dev-dependencies]
 itertools = "0.10.5"
+env_logger = "0.10.0"
+
+[profile.release]
+debug = true

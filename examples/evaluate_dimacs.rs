@@ -1,5 +1,6 @@
 extern crate itertools;
 extern crate smellysat;
+extern crate env_logger;
 
 use itertools::Itertools;
 use smellysat::dimacs;
@@ -14,6 +15,8 @@ enum Error {
 }
 
 fn main() {
+    env_logger::init();
+
     let args: Vec<String> = env::args().collect();
     let filepath = match args.len() {
         2 => args.get(1).unwrap(),

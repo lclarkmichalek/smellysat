@@ -1,6 +1,8 @@
 use std::fmt;
 use std::rc::Rc;
 
+use log::{trace, info};
+
 use crate::instance::*;
 use crate::solver::dfs_path::DFSPath;
 use crate::solver::knowledge_graph::{self, KnowledgeGraph};
@@ -80,7 +82,7 @@ impl Instance {
             }
         };
 
-        println!(
+        info!(
             "inferred {} units pre traversal",
             dfs_path.assignment().size()
         );
@@ -100,7 +102,7 @@ impl Instance {
 
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
             if let Some(conflict) = prop_eval_result {
-                eprintln!("conflict: {:?}", conflict);
+                trace!("conflict: {:?}", conflict);
                 match self.backtrack_and_pivot(
                     conflict,
                     &mut dfs_path,

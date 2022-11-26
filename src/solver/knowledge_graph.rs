@@ -1,4 +1,5 @@
 use fnv::{FnvHashMap, FnvHashSet};
+use log::trace;
 
 use crate::instance::*;
 
@@ -23,13 +24,13 @@ impl KnowledgeGraph {
     }
 
     pub(crate) fn add_decision(&mut self, decision: Literal) {
-        eprintln!("decision: {:?}", decision);
+        trace!("decision: {:?}", decision);
         self.vertices.insert(decision);
         self.decisions.insert(decision);
     }
 
     pub(crate) fn add_inferred(&mut self, inferred: Literal, clause: &Clause) {
-        eprintln!("inference: {:?}", inferred);
+        trace!("inference: {:?}", inferred);
         self.vertices.insert(inferred);
         for &literal in clause.literals() {
             if literal == inferred {

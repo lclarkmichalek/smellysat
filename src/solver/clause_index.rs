@@ -203,8 +203,6 @@ mod test {
         // With c=false, the 3rd clause is evaluatable
         let notc = Literal::new(c, false);
         ci.mark_resolved(notc.var());
-        println!("ec: {:?}", ci.find_evaluatable_candidates(notc));
-        println!("ecl: {:?}", ci.find_evaluatable_candidates(notc).len());
         assert_eq!(ci.find_evaluatable_candidates(notc).len(), 1);
         ci.mark_unresolved(notc.var());
 

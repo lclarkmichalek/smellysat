@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use log::trace;
+
 use crate::instance::*;
 
 use super::assignment_set::EvaluationResult;
@@ -59,18 +61,18 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                 .assignments_since_last_decision()
                 .as_assignment_vec(),
         );
-        eprintln!("q: {:?}", queue);
+        trace!("q: {:?}", queue);
 
         while !queue.is_empty() {
-            println!("assignment: {:?}", self.dfs_path.assignment());
+            trace!("assignment: {:?}", self.dfs_path.assignment());
 
             let literal = queue.pop_back().unwrap();
-            println!("lit: {:?}", literal);
-            println!("ci: {:?}", self.clause_index);
+            trace!("lit: {:?}", literal);
+            trace!("ci: {:?}", self.clause_index);
             // Build this list to avoid writing to the clause_index during the loop over borrowed clauses
             let mut inferred_literals = vec![];
             for clause in self.clause_index.find_unit_prop_candidates(literal) {
-                println!("clause: {:?}", clause);
+                trace!("clause: {:?}", clause);
                 match self.propagate_unit(literal, &clause) {
                     PropagationResult::Conflicted(conflict) => return Some(conflict),
                     PropagationResult::Inferred(inferred) => {
