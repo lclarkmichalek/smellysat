@@ -40,6 +40,10 @@ impl DFSPath {
         }
     }
 
+    pub(crate) fn last_decision(&self) -> Option<Literal> {
+        self.path.last().map(|e| e.chosen)
+    }
+
     // Records a step in the DFS search
     pub(crate) fn add_decision(&mut self, literal: Literal) {
         self.require_unset(literal);
@@ -71,19 +75,9 @@ impl DFSPath {
     /// and drops the paths. Builds a list of the assignments (to allow state rollbacks), and the
     /// last decision after the backtrack point (to allow pivots).
     ///
-    /// The DFSPatth state (such as the assignment) will be rolled back as part of this.
-    pub(crate) fn backtrack(&mut self) -> BacktrackResult {
-        let backtrack_point = self.find_backtrack_point_dfs();
-
-        let result = match backtrack_point {
-            None => {
-                return BacktrackResult {
-                    assignments: vec![],
-                    last_decision: None,
-                }
-            }
-            Some(ix) => self.execute_backtrack(ix),
-        };
+    /// The DFSPatt state (such as the assignment) will be rolled back as part of this.
+    pub(crate) fn backtrack(&mut self, pivot: usize) -> BacktrackResult {
+        let result = self.execute_backtrack(pivot);
 
         for &literal in result.assignments.iter() {
             self.assignment.remove(literal);
@@ -107,18 +101,6 @@ impl DFSPath {
         }
     }
 
-    // A dumb stupid dfs style backtrack strategy - look for the last path where we didn't go "left" - i.e. try the false path
-    fn find_backtrack_point_dfs(&self) -> Option<usize> {
-        for (ix, entry) in self.path.iter().enumerate().rev() {
-            // If this was a left hand path (X=true), go down the right hand path this time.
-            // Else, continue
-            if entry.chosen.polarity() {
-                return Some(ix);
-            }
-        }
-        None
-    }
-
     #[cfg(debug_assertions)]
     fn require_unset(&self, literal: Literal) {
         if self.assignment.contains(literal) {
@@ -130,7 +112,11 @@ impl DFSPath {
     }
 
     #[cfg(not(debug_assertions))]
-    fn require_unset(&self, literal: Literal) {}
+    fn require_unset(&self, _literal: Literal) {}
+
+    pub(crate) fn search_path(&self) -> &Vec<DFSPathEntry> {
+        &self.path
+    }
 }
 
 impl fmt::Debug for DFSPath {
@@ -172,7 +158,10 @@ pub(crate) struct BacktrackResult {
 
 #[cfg(test)]
 mod test {
-    use crate::{solver::dfs_path::*};
+    use crate::solver::{
+        backtrack::{BacktrackStrategy, Conflict, DumbBacktrackStrategy},
+        dfs_path::*,
+    };
 
     #[test]
     fn test_bookkeeping() {
@@ -195,18 +184,30 @@ mod test {
         assert_eq!(sp.assignment().size(), 3);
     }
 
+    // Primarily tests that we are cleaning up the DFSPath assignments etc when we rollback
     #[test]
-    fn test_backtrack() {
+    fn test_backtrack_rollback() {
         let a = Variable(0);
         let b = Variable(1);
         let c = Variable(2);
         let notc = Literal::new(c, false);
 
         let mut path = DFSPath::new(LiteralSet::new());
+        let strategy = DumbBacktrackStrategy {};
 
         path.add_decision(Literal::new(a, true));
         path.add_inferred(notc);
-        let backtrack_res = path.backtrack();
+        let conflict = Conflict {
+            conflicting_decision: None,
+            conflicting_literal: notc,
+            conflicting_clause: &Clause::new(&vec![]),
+        };
+
+        let backtrack_res = path.backtrack(
+            strategy
+                .find_backtrack_point(path.search_path(), &conflict)
+                .unwrap(),
+        );
         assert_eq!(path.depth(), 0);
         assert_eq!(backtrack_res.assignments, vec![notc, Literal::new(a, true)]);
         assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
@@ -215,18 +216,16 @@ mod test {
         path.add_decision(Literal::new(a, true));
         path.add_decision(Literal::new(b, false));
         path.add_inferred(notc);
-        let backtrack_res = path.backtrack();
+        let backtrack_res = path.backtrack(
+            strategy
+                .find_backtrack_point(path.search_path(), &conflict)
+                .unwrap(),
+        );
         assert_eq!(path.depth(), 0);
         assert_eq!(
             backtrack_res.assignments,
             vec![Literal::new(a, true), notc, Literal::new(b, false)]
         );
         assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
-
-        // In this case, the tree is fully explored, and backtracking fails
-        path.add_decision(Literal::new(a, false));
-        path.add_decision(Literal::new(b, false));
-        let backtrack_res = path.backtrack();
-        assert_eq!(backtrack_res.last_decision, None);
     }
 }

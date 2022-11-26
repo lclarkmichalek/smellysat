@@ -27,6 +27,10 @@ impl LiteralSet {
         self.get(lit.var()) == Some(lit.polarity())
     }
 
+    pub(crate) fn contains_var(&self, var: Variable) -> bool {
+        self.values.contains_key(&var)
+    }
+
     pub(crate) fn remove(&mut self, lit: Literal) {
         let removed = self.values.remove(&lit.var());
         if removed != Some(lit.polarity()) {

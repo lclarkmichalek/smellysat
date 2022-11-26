@@ -5,6 +5,7 @@ use log::trace;
 use crate::instance::*;
 
 use super::assignment_set::EvaluationResult;
+use super::backtrack::Conflict;
 use super::clause_index::ClauseIndex;
 use super::dfs_path::DFSPath;
 use super::knowledge_graph::KnowledgeGraph;
@@ -42,7 +43,8 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                 match self.dfs_path.assignment().evaluate(clause) {
                     EvaluationResult::False => {
                         return Some(Conflict {
-                            literal,
+                            conflicting_decision: self.dfs_path.last_decision(),
+                            conflicting_literal: literal,
                             conflicting_clause: clause,
                         });
                     }
@@ -113,7 +115,8 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
         match last_free {
             Some(lit) => PropagationResult::Inferred(lit),
             None => PropagationResult::Conflicted(Conflict {
-                literal,
+                conflicting_decision: self.dfs_path.last_decision(),
+                conflicting_literal: literal,
                 conflicting_clause: clause,
             }),
         }
@@ -125,12 +128,6 @@ enum PropagationResult<'a> {
     Conflicted(Conflict<'a>),
     Inferred(Literal),
     Failed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Conflict<'a> {
-    pub(crate) literal: Literal,
-    pub(crate) conflicting_clause: &'a Clause,
 }
 
 pub(crate) fn find_inital_assignment<'a, 'c>(
@@ -152,7 +149,8 @@ pub(crate) fn find_inital_assignment<'a, 'c>(
         if lit_a.var() == lit_b.var() {
             let relevant_clauses = clause_index.find_unit_clauses_containing_var(lit_a.var());
             return InitialAssignmentResult::Conflict(Conflict {
-                literal: lit_a,
+                conflicting_decision: Some(lit_a),
+                conflicting_literal: lit_a,
                 conflicting_clause: relevant_clauses[0],
             });
         }
