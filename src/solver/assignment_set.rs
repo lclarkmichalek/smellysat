@@ -19,12 +19,12 @@ impl LiteralSet {
         self.values.insert(lit.var(), lit.polarity());
     }
 
-    pub(crate) fn get(&self, var: Variable) -> Option<bool> {
-        self.values.get(&var).map(|x| *x)
+    pub(crate) fn get(&self, var: Variable) -> Option<Literal> {
+        self.values.get(&var).map(|&x| Literal::new(var, x))
     }
 
     pub(crate) fn contains(&self, lit: Literal) -> bool {
-        self.get(lit.var()) == Some(lit.polarity())
+        self.get(lit.var()) == Some(lit)
     }
 
     pub(crate) fn contains_var(&self, var: Variable) -> bool {
@@ -58,9 +58,9 @@ impl LiteralSet {
     }
 
     pub(crate) fn evaluate(&self, clause: &Clause) -> EvaluationResult {
-        for literal in clause.literals() {
-            if let Some(ass_sign) = self.get(literal.var()) {
-                if ass_sign == literal.polarity() {
+        for &literal in clause.literals() {
+            if let Some(ass) = self.get(literal.var()) {
+                if ass == literal {
                     return EvaluationResult::True;
                 }
             } else {

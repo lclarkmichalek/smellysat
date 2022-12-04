@@ -104,6 +104,14 @@ impl Instance {
             if let Some(conflict) = prop_eval_result {
                 trace!("conflict: {:?}", conflict);
                 stats.backtrack_count += 1;
+                let implicated_vars = knowledge_graph.find_implicated_decision_variables(&conflict);
+                trace!("conflict involved decisions: {:?}", implicated_vars,);
+                let implied_clause = implicated_vars
+                    .iter()
+                    .map(|&v| dfs_path.assignment().get(v).unwrap().invert())
+                    .collect::<Vec<_>>();
+                trace!("new clause: {:?}", implied_clause);
+
                 match self.backtrack_and_pivot(
                     conflict,
                     &mut dfs_path,
@@ -164,6 +172,7 @@ impl Instance {
         for lit in backtracked.assignments.iter() {
             clause_index.mark_unresolved(lit.var());
         }
+        knowledge_graph.remove(&backtracked.assignments);
 
         // Find the next place to go. If there is none, the search is finished
         let decision =
@@ -349,6 +358,35 @@ mod test {
         expected.add(Literal::new(a, true));
         expected.add(Literal::new(b, true));
         expected.add(Literal::new(c, true));
+        assert_eq!(solution.solution, Some(expected));
+    }
+
+    // This test requires the solver to step into a=true, hit conflicts, backtrack, and then try a=false
+    #[test]
+    fn test_build_and_solve_feasible_backtrack() {
+        env_logger::init();
+
+        let mut vr = VariableRegister::new();
+        let va = vr.create_original("a");
+        let vb = vr.create_original("b");
+        let vc = vr.create_original("c");
+
+        let a = Literal::new(va, true);
+        let b = Literal::new(vb, true);
+        let c = Literal::new(vc, true);
+        let clauses = vec![
+            Clause::new(&vec![a.invert(), b.invert()]),
+            Clause::new(&vec![a.invert(), c.invert()]),
+            Clause::new(&vec![b, c]),
+        ];
+
+        let mut instance = Instance::new_from_clauses(clauses, vr);
+        let solution = instance.solve();
+
+        let mut expected = LiteralSet::new();
+        expected.add(a.invert());
+        expected.add(b);
+        expected.add(c);
         assert_eq!(solution.solution, Some(expected));
     }
 }

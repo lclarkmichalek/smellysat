@@ -102,9 +102,9 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
         let assignment = self.dfs_path.assignment();
 
         let mut last_free = None;
-        for literal in clause.literals() {
-            if let Some(ass_sign) = assignment.get(literal.var()) {
-                if ass_sign == literal.polarity() {
+        for &literal in clause.literals() {
+            if let Some(ass) = assignment.get(literal.var()) {
+                if ass == literal {
                     // If there is a matching literal, we can't say anything about the free variable
                     return PropagationResult::Failed;
                 }
@@ -113,7 +113,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                     // Implies we have multiple unresolved variables, short circuit
                     return PropagationResult::Failed;
                 }
-                last_free = Some(*literal);
+                last_free = Some(literal);
             }
         }
         // Having no free variables, but being unable to propagate implies a conflict
