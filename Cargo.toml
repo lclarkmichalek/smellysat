@@ -10,6 +10,7 @@ thiserror = "1.0"
 fnv = "1.0.3"
 prometheus = "0.13.3"
 log = "0.4.17"
+itertools = "0.10.5"
 
 [dev-dependencies]
 itertools = "0.10.5"

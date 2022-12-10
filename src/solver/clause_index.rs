@@ -4,31 +4,28 @@ use fnv::{FnvHashMap, FnvHashSet};
 
 use crate::instance::*;
 
+use super::clause_store::{ClauseRef, ClauseStore};
+
 #[derive(Clone)]
-pub(crate) struct ClauseIndex<'a> {
-    clause_states: Vec<ClauseState<'a>>,
+pub(crate) struct ClauseIndex {
     // mapping from variable to the indexes of clauses containing the variable
     by_var: FnvHashMap<Variable, Vec<usize>>,
+    // The number of free variables in the clause at the given index
+    free_var_count: Vec<usize>,
     // no free var is used for evaluation. one free for unit prop.
     no_free_var_clauses: FnvHashSet<usize>,
     one_free_var_clauses: FnvHashSet<usize>,
     two_free_var_clause_count: usize,
 }
 
-impl<'a> ClauseIndex<'a> {
+impl ClauseIndex {
     // We assume at this point that all literals are free.
-    pub(crate) fn new(clauses: &'a Vec<Clause>) -> ClauseIndex<'a> {
-        let clause_states = clauses
-            .iter()
-            .map(|c| ClauseState {
-                clause: c,
-                free_variable_count: c.len(),
-            })
-            .collect();
+    pub(crate) fn new(clauses: &Vec<Clause>) -> ClauseIndex {
+        let free_var_count = clauses.iter().map(|c| c.len()).collect();
 
         let mut idx = ClauseIndex {
-            clause_states: clause_states,
             by_var: FnvHashMap::default(),
+            free_var_count,
             no_free_var_clauses: FnvHashSet::default(),
             one_free_var_clauses: FnvHashSet::default(),
             two_free_var_clause_count: 0,
@@ -36,11 +33,11 @@ impl<'a> ClauseIndex<'a> {
 
         for (i, clause) in clauses.iter().enumerate() {
             for lit in clause.literals() {
-                idx.by_var.entry(lit.var()).or_insert(vec![]).push(i)
+                idx.by_var.entry(lit.var()).or_insert(vec![]).push(i);
             }
-            match clause.literals().len() {
+            match clause.len() {
                 0 => {
-                    panic!("empty clause")
+                    panic!("empty clause: {:?}", i)
                 }
                 1 => {
                     idx.one_free_var_clauses.insert(i);
@@ -60,8 +57,8 @@ impl<'a> ClauseIndex<'a> {
             return;
         }
         for &ix in entry.unwrap() {
-            self.clause_states[ix].free_variable_count -= 1;
-            match self.clause_states[ix].free_variable_count {
+            self.free_var_count[ix] -= 1;
+            match self.free_var_count[ix] {
                 0 => {
                     self.one_free_var_clauses.remove(&ix);
                     self.no_free_var_clauses.insert(ix);
@@ -78,8 +75,8 @@ impl<'a> ClauseIndex<'a> {
     pub(crate) fn mark_unresolved(&mut self, var: Variable) {
         if let Some(ixes) = self.by_var.get(&var) {
             for &ix in ixes {
-                self.clause_states[ix].free_variable_count += 1;
-                match self.clause_states[ix].free_variable_count {
+                self.free_var_count[ix] += 1;
+                match self.free_var_count[ix] {
                     0 => {
                         self.no_free_var_clauses.insert(ix);
                     }
@@ -96,59 +93,51 @@ impl<'a> ClauseIndex<'a> {
             }
         }
     }
+}
+
+pub(crate) struct ClauseIndexView<'a> {
+    store: &'a ClauseStore,
+    idx: &'a ClauseIndex,
+}
+
+impl<'a> ClauseIndexView<'a> {
+    pub(crate) fn new(store: &'a ClauseStore, index: &'a ClauseIndex) -> ClauseIndexView<'a> {
+        ClauseIndexView { store, idx: index }
+    }
+
+    pub(crate) fn find_unit_prop_candidates(&self, literal: Literal) -> Vec<ClauseRef> {
+        match self.idx.by_var.get(&literal.var()) {
+            None => vec![],
+            Some(clause_ixes) => clause_ixes
+                .iter()
+                .filter(|ix| self.idx.one_free_var_clauses.contains(ix))
+                .filter_map(|&ix| self.store.get(ix))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn find_evaluatable_candidates(&self, literal: Literal) -> Vec<ClauseRef> {
+        match self.idx.by_var.get(&literal.var()) {
+            None => vec![],
+            Some(clause_ixes) => clause_ixes
+                .iter()
+                .filter(|ix| self.idx.no_free_var_clauses.contains(ix))
+                .filter_map(|&ix| self.store.get(ix))
+                .collect(),
+        }
+    }
 
     pub(crate) fn all_clauses_resolved(&self) -> bool {
-        self.no_free_var_clauses.len() == self.clause_states.len()
-    }
-
-    pub(crate) fn find_unit_prop_candidates(&self, literal: Literal) -> Vec<&'a Clause> {
-        match self.by_var.get(&literal.var()) {
-            None => vec![],
-            Some(clause_ixes) => clause_ixes
-                .iter()
-                .filter(|ix| self.one_free_var_clauses.contains(ix))
-                .map(|&ix| self.clause_states[ix].clause)
-                .collect(),
-        }
-    }
-
-    pub(crate) fn find_evaluatable_candidates(&self, literal: Literal) -> Vec<&'a Clause> {
-        match self.by_var.get(&literal.var()) {
-            None => vec![],
-            Some(clause_ixes) => clause_ixes
-                .iter()
-                .filter(|ix| self.no_free_var_clauses.contains(ix))
-                .map(|&ix| self.clause_states[ix].clause)
-                .collect(),
-        }
-    }
-
-    pub(crate) fn find_unit_clauses(&self) -> Vec<&'a Clause> {
-        self.one_free_var_clauses
-            .iter()
-            .map(|&ix| self.clause_states[ix].clause)
-            .filter(|cl| cl.is_unit())
-            .collect()
-    }
-
-    pub(crate) fn find_unit_clauses_containing_var(&self, var: Variable) -> Vec<&'a Clause> {
-        match self.by_var.get(&var) {
-            None => vec![],
-            Some(clause_ixes) => clause_ixes
-                .iter()
-                .filter(|&&ix| self.clause_states[ix].clause.is_unit())
-                .map(|&ix| self.clause_states[ix].clause)
-                .collect(),
-        }
+        self.idx.no_free_var_clauses.len() == self.idx.free_var_count.len()
     }
 }
 
-impl<'a> fmt::Debug for ClauseIndex<'a> {
+impl<'a> fmt::Debug for ClauseIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "ClauseIndex {{ clauses: {:?}, no_free: {:?}, one_free: {:?}, more_free: {:?} }}",
-            self.clause_states.len(),
+            self.free_var_count.len(),
             self.no_free_var_clauses.len(),
             self.one_free_var_clauses.len(),
             self.two_free_var_clause_count
@@ -156,17 +145,9 @@ impl<'a> fmt::Debug for ClauseIndex<'a> {
     }
 }
 
-#[derive(Clone)]
-struct ClauseState<'a> {
-    clause: &'a Clause,
-    free_variable_count: usize,
-}
-
 #[cfg(test)]
 mod test {
-    use crate::instance::*;
-
-    use super::ClauseIndex;
+    use crate::{instance::*, solver::clause_store::ClauseStore};
 
     #[test]
     fn test_clause_index() {
@@ -184,32 +165,31 @@ mod test {
             Clause::new(&vec![Literal::new(b, true)]),
         ];
 
-        let mut ci = ClauseIndex::new(&clauses);
+        let mut store = ClauseStore::new(clauses);
+        let idx = store.idx();
 
-        assert!(!ci.all_clauses_resolved());
+        assert!(!idx.all_clauses_resolved());
 
-        // the 3rd and 4th clauses are unit
-        assert_eq!(ci.find_unit_clauses().len(), 2);
         // With a=false, the first clause is a candidate for unit prop
         let nota = Literal::new(a, false);
-        ci.mark_resolved(nota.var());
-        assert_eq!(ci.find_unit_prop_candidates(nota).len(), 1);
-        ci.mark_unresolved(nota.var());
+        store.mark_resolved(nota.var());
+        assert_eq!(store.idx().find_unit_prop_candidates(nota).len(), 1);
+        store.mark_unresolved(nota.var());
         // With b=false, the second clause is a candidate for unit prop
         let notb = Literal::new(b, false);
-        ci.mark_resolved(notb.var());
-        assert_eq!(ci.find_unit_prop_candidates(notb).len(), 1);
-        ci.mark_unresolved(notb.var());
+        store.mark_resolved(notb.var());
+        assert_eq!(store.idx().find_unit_prop_candidates(notb).len(), 1);
+        store.mark_unresolved(notb.var());
         // With c=false, the 3rd clause is evaluatable
         let notc = Literal::new(c, false);
-        ci.mark_resolved(notc.var());
-        assert_eq!(ci.find_evaluatable_candidates(notc).len(), 1);
-        ci.mark_unresolved(notc.var());
+        store.mark_resolved(notc.var());
+        assert_eq!(store.idx().find_evaluatable_candidates(notc).len(), 1);
+        store.mark_unresolved(notc.var());
 
         // Now let's resolve everything
-        ci.mark_resolved(a);
-        ci.mark_resolved(b);
-        ci.mark_resolved(c);
-        assert!(ci.all_clauses_resolved());
+        store.mark_resolved(a);
+        store.mark_resolved(b);
+        store.mark_resolved(c);
+        assert!(store.idx().all_clauses_resolved());
     }
 }

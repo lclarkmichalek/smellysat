@@ -1,7 +1,7 @@
 use std::fmt;
 use std::rc::Rc;
 
-use log::trace;
+use log::{info, trace};
 
 use crate::instance::*;
 use crate::solver::backtrack::{BacktrackStrategy, DumbBacktrackStrategy};
@@ -13,7 +13,8 @@ use crate::variable_registry::VariableRegister;
 use super::assignment_set::LiteralSet;
 use super::backtrack::Conflict;
 use super::clause_index::ClauseIndex;
-use super::unit_propagator::UnitPropagator;
+use super::clause_store::ClauseStore;
+use super::unit_propagator::{record_initial_assignment, UnitPropagator};
 
 #[derive(Debug, Clone)]
 struct TraversalPath {
@@ -69,10 +70,10 @@ impl Instance {
             variables: self.variables.clone(),
         };
 
-        let mut clause_index = ClauseIndex::new(&self.clauses);
+        let mut clause_store = ClauseStore::new(self.clauses.clone());
         let mut knowledge_graph = KnowledgeGraph::new(self.variables.count());
 
-        let mut dfs_path = match find_inital_assignment(&mut clause_index, &mut knowledge_graph) {
+        let initial_assignment = match find_inital_assignment(&mut clause_store) {
             InitialAssignmentResult::Conflict(_conflict) => {
                 return Solution {
                     literals: self.variables.clone(),
@@ -80,14 +81,16 @@ impl Instance {
                     stats,
                 }
             }
-            InitialAssignmentResult::Assignment(vars) => {
-                DFSPath::new(LiteralSet::from_assignment_vec(&vars))
-            }
+            InitialAssignmentResult::Assignment(vars) => vars,
         };
+
+        record_initial_assignment(&mut clause_store, &mut knowledge_graph, &initial_assignment);
+        let mut dfs_path = DFSPath::new(LiteralSet::from_assignment_vec(&initial_assignment));
 
         stats.initial_unit_count = dfs_path.assignment().size();
 
-        if clause_index.all_clauses_resolved() {
+        if clause_store.idx().all_clauses_resolved() {
+            info!("solved through initial unit assignment");
             return Solution {
                 literals: self.variables.clone(),
                 solution: Some(dfs_path.assignment().clone()),
@@ -97,14 +100,15 @@ impl Instance {
 
         loop {
             let mut unit_prop =
-                UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
+                UnitPropagator::new(&mut clause_store, &mut dfs_path, &mut knowledge_graph);
 
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
             stats.unit_prop_count += dfs_path.assignments_since_last_decision().size();
             if let Some(conflict) = prop_eval_result {
                 trace!("conflict: {:?}", conflict);
                 stats.backtrack_count += 1;
-                let implicated_vars = knowledge_graph.find_implicated_decision_variables(&conflict);
+                let implicated_vars =
+                    knowledge_graph.find_implicated_decision_variables(&clause_store, &conflict);
                 trace!("conflict involved decisions: {:?}", implicated_vars,);
                 let implied_clause = implicated_vars
                     .iter()
@@ -115,7 +119,7 @@ impl Instance {
                 match self.backtrack_and_pivot(
                     conflict,
                     &mut dfs_path,
-                    &mut clause_index,
+                    &mut clause_store,
                     &mut knowledge_graph,
                 ) {
                     None => {
@@ -129,7 +133,7 @@ impl Instance {
                 }
             }
 
-            if clause_index.all_clauses_resolved() {
+            if clause_store.idx().all_clauses_resolved() {
                 return Solution {
                     literals: self.variables.clone(),
                     solution: Some(dfs_path.assignment().clone()),
@@ -143,7 +147,7 @@ impl Instance {
                 stats.step_count += 1;
                 dfs_path.add_decision(lit);
                 knowledge_graph.add_decision(lit);
-                clause_index.mark_resolved(var)
+                clause_store.mark_resolved(var)
             } else {
                 // If we can't keep going, we're done, i guess. Iterate one more time
                 continue;
@@ -155,7 +159,7 @@ impl Instance {
         &self,
         conflict: Conflict,
         path: &mut DFSPath,
-        clause_index: &mut ClauseIndex,
+        clause_store: &mut ClauseStore,
         knowledge_graph: &mut KnowledgeGraph,
     ) -> Option<()> {
         // Attempt to find the position that should be pivoted on. if we cannot find such a point, we have failed to backtrack
@@ -170,7 +174,7 @@ impl Instance {
 
         // Rollback the assignments
         for lit in backtracked.assignments.iter() {
-            clause_index.mark_unresolved(lit.var());
+            clause_store.mark_unresolved(lit.var());
         }
         knowledge_graph.remove(&backtracked.assignments);
 
@@ -185,7 +189,7 @@ impl Instance {
             };
 
         path.add_decision(decision);
-        clause_index.mark_resolved(decision.var());
+        clause_store.mark_resolved(decision.var());
         knowledge_graph.add_decision(decision);
 
         Some(())

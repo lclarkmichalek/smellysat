@@ -6,32 +6,31 @@ use crate::instance::*;
 
 use super::assignment_set::EvaluationResult;
 use super::backtrack::Conflict;
-use super::clause_index::ClauseIndex;
+use super::clause_store::{ClauseRef, ClauseStore};
 use super::dfs_path::DFSPath;
 use super::knowledge_graph::KnowledgeGraph;
+use itertools::Itertools;
 
-// c -> clauses
-// a -> other junk
-pub(crate) struct UnitPropagator<'a, 'c: 'a> {
-    clause_index: &'a mut ClauseIndex<'c>,
+pub(crate) struct UnitPropagator<'a> {
+    clause_store: &'a mut ClauseStore,
     dfs_path: &'a mut DFSPath,
-    knowledge_graph: &'a mut KnowledgeGraph<'c>,
+    knowledge_graph: &'a mut KnowledgeGraph,
 }
 
-impl<'a, 'c> UnitPropagator<'a, 'c> {
+impl<'a> UnitPropagator<'a> {
     pub(crate) fn new(
-        clause_index: &'a mut ClauseIndex<'c>,
+        clause_store: &'a mut ClauseStore,
         dfs_path: &'a mut DFSPath,
-        knowledge_graph: &'a mut KnowledgeGraph<'c>,
-    ) -> UnitPropagator<'a, 'c> {
+        knowledge_graph: &'a mut KnowledgeGraph,
+    ) -> UnitPropagator<'a> {
         UnitPropagator {
-            clause_index,
+            clause_store,
             dfs_path,
             knowledge_graph,
         }
     }
 
-    pub(crate) fn evaluate(&'a self) -> Option<Conflict<'c>> {
+    pub(crate) fn evaluate(&'a self) -> Option<Conflict> {
         // So we run through the untested literals, and check all of the relevant candidate clauses.
         // If any of them are invalid, return the conflict
         let untested_literals = self
@@ -39,8 +38,12 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
             .assignments_since_last_decision()
             .as_assignment_vec();
         for &literal in untested_literals.iter() {
-            for clause in self.clause_index.find_evaluatable_candidates(literal) {
-                match self.dfs_path.assignment().evaluate(clause) {
+            for clause in self.clause_store.idx().find_evaluatable_candidates(literal) {
+                match self
+                    .dfs_path
+                    .assignment()
+                    .evaluate(clause.literals(&self.clause_store))
+                {
                     EvaluationResult::False => {
                         return Some(Conflict {
                             conflicting_decision: self.dfs_path.last_decision(),
@@ -56,7 +59,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
         None
     }
 
-    pub(crate) fn propagate_units(&mut self) -> Option<Conflict<'c>> {
+    pub(crate) fn propagate_units(&mut self) -> Option<Conflict> {
         let mut queue = VecDeque::new();
         queue.extend(
             self.dfs_path
@@ -70,12 +73,11 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
 
             let literal = queue.pop_back().unwrap();
             trace!("lit: {:?}", literal);
-            trace!("ci: {:?}", self.clause_index);
             // Build this list to avoid writing to the clause_index during the loop over borrowed clauses
             let mut inferred_literals = vec![];
-            for clause in self.clause_index.find_unit_prop_candidates(literal) {
+            for clause in self.clause_store.idx().find_unit_prop_candidates(literal) {
                 trace!("clause: {:?}", clause);
-                match self.propagate_unit(literal, &clause) {
+                match self.propagate_unit(literal, clause) {
                     PropagationResult::Conflicted(conflict) => return Some(conflict),
                     PropagationResult::Inferred(inferred) => {
                         // Important: propagate_unit takes its assignment from dfs_path. Deferring
@@ -87,7 +89,7 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
                             self.dfs_path.last_decision(),
                             clause,
                         );
-                        self.clause_index.mark_resolved(inferred.var());
+                        self.clause_store.mark_resolved(inferred.var());
                         inferred_literals.push(inferred);
                     }
                     PropagationResult::Failed => (),
@@ -98,11 +100,11 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
         None
     }
 
-    fn propagate_unit(&self, literal: Literal, clause: &'c Clause) -> PropagationResult<'c> {
+    fn propagate_unit(&self, literal: Literal, clause: ClauseRef) -> PropagationResult {
         let assignment = self.dfs_path.assignment();
 
         let mut last_free = None;
-        for &literal in clause.literals() {
+        for literal in clause.literals(&self.clause_store) {
             if let Some(ass) = assignment.get(literal.var()) {
                 if ass == literal {
                     // If there is a matching literal, we can't say anything about the free variable
@@ -129,134 +131,93 @@ impl<'a, 'c> UnitPropagator<'a, 'c> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum PropagationResult<'a> {
-    Conflicted(Conflict<'a>),
+enum PropagationResult {
+    Conflicted(Conflict),
     Inferred(Literal),
     Failed,
 }
 
-pub(crate) fn find_inital_assignment<'a, 'c>(
-    clause_index: &'a mut ClauseIndex<'c>,
-    knowledge_graph: &'a mut KnowledgeGraph,
-) -> InitialAssignmentResult<'c> {
-    let mut literals: Vec<Literal> = clause_index
-        .find_unit_clauses()
-        .iter()
-        .map(|cl| cl.literals()[0])
-        .collect();
+pub(crate) fn find_inital_assignment(clause_store: &ClauseStore) -> InitialAssignmentResult {
+    let mut unit_clauses: Vec<ClauseRef> = clause_store.iter().filter(|cl| cl.is_unit()).collect();
 
     // Check if we have any duplicates
-    literals.sort();
-    literals.dedup();
-    for window in literals.windows(2) {
-        let lit_a = window[0];
-        let lit_b = window[1];
-        if lit_a.var() == lit_b.var() {
-            let relevant_clauses = clause_index.find_unit_clauses_containing_var(lit_a.var());
+    unit_clauses.sort_by_key(|cl| cl.unit());
+    unit_clauses.dedup();
+    for (&cl_a, &cl_b) in unit_clauses.iter().tuple_windows() {
+        if cl_a.unit().var() == cl_b.unit().var() {
             return InitialAssignmentResult::Conflict(Conflict {
-                conflicting_decision: Some(lit_a),
-                conflicting_literal: lit_a,
-                conflicting_clause: relevant_clauses[0],
+                conflicting_decision: Some(cl_a.unit()),
+                conflicting_literal: cl_a.unit(),
+                conflicting_clause: cl_b,
             });
         }
     }
 
-    for &literal in literals.iter() {
-        clause_index.mark_resolved(literal.var());
-        // Questionable semantics, but whatever.
-        knowledge_graph.add_decision(literal);
-    }
+    let literals = unit_clauses.iter().map(|cl| cl.unit()).collect();
     InitialAssignmentResult::Assignment(literals)
 }
 
+pub(crate) fn record_initial_assignment(
+    clause_store: &mut ClauseStore,
+    knowledge_graph: &mut KnowledgeGraph,
+    assignment: &Vec<Literal>,
+) {
+    for &literal in assignment {
+        clause_store.mark_resolved(literal.var());
+        knowledge_graph.add_initial(literal);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum InitialAssignmentResult<'c> {
-    Conflict(Conflict<'c>),
+pub(crate) enum InitialAssignmentResult {
+    Conflict(Conflict),
     Assignment(Vec<Literal>),
 }
 
 #[cfg(test)]
 mod test {
+    use log::trace;
+
     use crate::{
         instance::*,
         solver::{
-            assignment_set::{EvaluationResult, LiteralSet},
-            clause_index::ClauseIndex,
-            dfs_path::DFSPath,
-            knowledge_graph::KnowledgeGraph,
-            unit_propagator::UnitPropagator,
+            assignment_set::LiteralSet, clause_store::ClauseStore, dfs_path::DFSPath,
+            knowledge_graph::KnowledgeGraph, unit_propagator::UnitPropagator,
         },
     };
 
-    #[test]
-    fn test_evaluate_clause_true() {
-        let a = Variable(0);
-        let b = Variable(1);
-        let c = Variable(2);
-        // A OR !C
-        let clause = Clause::new(&vec![Literal::new(a, true), Literal::new(c, false)]);
-        // a = true, b = true, c = false
-        assert_eq!(
-            LiteralSet::from_assignment_vec(&vec![
-                Literal::new(a, true),
-                Literal::new(b, true),
-                Literal::new(c, false),
-            ])
-            .evaluate(&clause),
-            EvaluationResult::True
-        );
-        // a = false, b = false, c = false
-        assert_eq!(
-            LiteralSet::from_assignment_vec(&vec![
-                Literal::new(a, false),
-                Literal::new(b, false),
-                Literal::new(c, false),
-            ])
-            .evaluate(&clause),
-            EvaluationResult::True
-        );
-        // a = false, b = false, c = true
-        assert_eq!(
-            LiteralSet::from_assignment_vec(&vec![
-                Literal::new(a, false),
-                Literal::new(b, false),
-                Literal::new(c, true),
-            ])
-            .evaluate(&clause),
-            EvaluationResult::False
-        )
-    }
-
-    #[test]
-    fn test_evaluate_clause_missing() {
-        let c = Clause::new(&vec![Literal::new(Variable(0), true)]);
-        assert_eq!(LiteralSet::new().evaluate(&c), EvaluationResult::Unknown)
-    }
-
+    /// Set up a instance of `A && !B`, and an assignment of !A.
+    /// This should cause us to infer !B through unit prop.
     #[test]
     fn test_unit_prop_single_unit_simple() {
-        let a = Variable(0);
-        let b = Variable(1);
+        let va = Variable(0);
+        let vb = Variable(1);
+        let a = Literal::new(va, true);
+        let b = Literal::new(vb, true);
 
         // a & !b
-        let clause = Clause::new(&vec![Literal::new(a, true), Literal::new(b, false)]);
-        let clauses = vec![clause];
+        let clause = Clause::new(&vec![a, b.invert()]);
 
-        let mut clause_index = ClauseIndex::new(&clauses);
+        let mut clause_store = ClauseStore::new(vec![clause]);
+        trace!("store: {:?}", clause_store);
         let mut dfs_path = DFSPath::new(LiteralSet::new());
         let mut knowledge_graph = KnowledgeGraph::new(2);
 
-        let decision = Literal::new(a, false);
+        let decision = a.invert();
         dfs_path.add_decision(decision);
-        clause_index.mark_resolved(a);
+        clause_store.mark_resolved(decision.var());
         knowledge_graph.add_decision(decision);
 
         let mut unit_propagator =
-            UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
+            UnitPropagator::new(&mut clause_store, &mut dfs_path, &mut knowledge_graph);
 
         let result = unit_propagator.propagate_units();
 
         assert_eq!(result, None);
+        assert_eq!(
+            dfs_path.assignment(),
+            &LiteralSet::from_assignment_vec(&vec![a.invert(), b.invert()])
+        );
     }
 
     #[test]
@@ -271,17 +232,17 @@ mod test {
         let clause_two = Clause::new(&vec![Literal::new(a, true), Literal::new(b, false)]);
         let clauses = vec![clause_one, clause_two];
 
-        let mut clause_index = ClauseIndex::new(&clauses);
+        let mut clause_store = ClauseStore::new(clauses);
         let mut dfs_path = DFSPath::new(LiteralSet::new());
         let mut knowledge_graph = KnowledgeGraph::new(2);
 
         let decision = Literal::new(a, false);
         dfs_path.add_decision(decision);
-        clause_index.mark_resolved(a);
+        clause_store.mark_resolved(a);
         knowledge_graph.add_decision(decision);
 
         let mut unit_propagator =
-            UnitPropagator::new(&mut clause_index, &mut dfs_path, &mut knowledge_graph);
+            UnitPropagator::new(&mut clause_store, &mut dfs_path, &mut knowledge_graph);
 
         let result = unit_propagator.propagate_units();
 

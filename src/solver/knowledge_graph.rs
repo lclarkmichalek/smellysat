@@ -5,15 +5,18 @@ use log::trace;
 
 use crate::instance::*;
 
-use super::backtrack::Conflict;
+use super::{
+    backtrack::Conflict,
+    clause_store::{ClauseRef, ClauseStore},
+};
 
 // As we process and make deductions (through unit propogation), we would like to store the graph. This is the global knowledge graph.
-pub(crate) struct KnowledgeGraph<'c> {
-    vertices: Vec<Node<'c>>,
+pub(crate) struct KnowledgeGraph {
+    vertices: Vec<Node>,
 }
 
-impl<'c> KnowledgeGraph<'c> {
-    pub(crate) fn new(variable_count: usize) -> KnowledgeGraph<'c> {
+impl KnowledgeGraph {
+    pub(crate) fn new(variable_count: usize) -> KnowledgeGraph {
         KnowledgeGraph {
             vertices: (0..variable_count)
                 .map(|_| Node {
@@ -23,6 +26,11 @@ impl<'c> KnowledgeGraph<'c> {
                 })
                 .collect(),
         }
+    }
+
+    pub(crate) fn add_initial(&mut self, decision: Literal) {
+        trace!("initial: {:?}", decision);
+        self.add_decision(decision);
     }
 
     pub(crate) fn add_decision(&mut self, decision: Literal) {
@@ -38,7 +46,7 @@ impl<'c> KnowledgeGraph<'c> {
         inferred: Literal,
         trigger: Literal,
         decision: Option<Literal>,
-        clause: &'c Clause,
+        clause: ClauseRef,
     ) {
         trace!("inference: {:?}", inferred);
         let v = &mut self.vertices[inferred.var().index() as usize];
@@ -56,7 +64,7 @@ impl<'c> KnowledgeGraph<'c> {
         }
     }
 
-    pub(crate) fn inference_path(&self, conflict: &Conflict<'c>) -> Vec<Variable> {
+    pub(crate) fn inference_path(&self, conflict: &Conflict) -> Vec<Variable> {
         let mut path = vec![conflict.conflicting_literal.var()];
         let mut ptr = &self.vertices[conflict.conflicting_literal.var().index() as usize];
         loop {
@@ -73,7 +81,8 @@ impl<'c> KnowledgeGraph<'c> {
 
     pub(crate) fn find_implicated_decision_variables(
         &self,
-        conflict: &Conflict<'c>,
+        store: &ClauseStore,
+        conflict: &Conflict,
     ) -> Vec<Variable> {
         let mut decisions = vec![];
         let mut seen = FnvHashSet::default();
@@ -81,7 +90,7 @@ impl<'c> KnowledgeGraph<'c> {
 
         let conflict_var = conflict.conflicting_literal.var();
         queue.push_back(conflict_var);
-        for lit in conflict.conflicting_clause.literals() {
+        for lit in conflict.conflicting_clause.literals(&store) {
             queue.push_back(lit.var());
         }
 
@@ -102,7 +111,7 @@ impl<'c> KnowledgeGraph<'c> {
             }
 
             if let Some(clause) = node.clause {
-                for literal in clause.literals() {
+                for literal in clause.literals(&store) {
                     if !seen.contains(&literal.var()) {
                         queue.push_back(literal.var());
                     }
@@ -114,12 +123,12 @@ impl<'c> KnowledgeGraph<'c> {
     }
 }
 
-struct Node<'c> {
+struct Node {
     // The decision or inference that enabled unit prop to arrive here.
     // If this node was set as part of a decision, this will be None
     trigger: Option<Variable>,
     // The last decision made before unit prop arrived here
     decision: Option<Variable>,
     // The clause that allowed us to infer our way here
-    clause: Option<&'c Clause>,
+    clause: Option<ClauseRef>,
 }

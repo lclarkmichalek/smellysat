@@ -3,6 +3,8 @@ use core::fmt;
 
 use fnv::FnvHashMap;
 
+use super::clause_store::{ClauseRef, ClauseStore};
+
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct LiteralSet {
     values: FnvHashMap<Variable, bool>,
@@ -57,8 +59,11 @@ impl LiteralSet {
             .collect()
     }
 
-    pub(crate) fn evaluate(&self, clause: &Clause) -> EvaluationResult {
-        for &literal in clause.literals() {
+    pub(crate) fn evaluate<T>(&self, clause: T) -> EvaluationResult
+    where
+        T: Iterator<Item = Literal>,
+    {
+        for literal in clause {
             if let Some(ass) = self.get(literal.var()) {
                 if ass == literal {
                     return EvaluationResult::True;
@@ -105,7 +110,7 @@ mod test {
         let b = Variable(1);
         let c = Variable(2);
         // A OR !C
-        let clause = Clause::new(&vec![Literal::new(a, true), Literal::new(c, false)]);
+        let clause = vec![Literal::new(a, true), Literal::new(c, false)];
         // a = true, b = true, c = false
         assert_eq!(
             LiteralSet::from_assignment_vec(&vec![
@@ -113,7 +118,7 @@ mod test {
                 Literal::new(b, true),
                 Literal::new(c, false),
             ])
-            .evaluate(&clause),
+            .evaluate(clause.iter().cloned()),
             EvaluationResult::True
         );
         // a = false, b = false, c = false
@@ -123,7 +128,7 @@ mod test {
                 Literal::new(b, false),
                 Literal::new(c, false),
             ])
-            .evaluate(&clause),
+            .evaluate(clause.iter().cloned()),
             EvaluationResult::True
         );
         // a = false, b = false, c = true
@@ -133,14 +138,17 @@ mod test {
                 Literal::new(b, false),
                 Literal::new(c, true),
             ])
-            .evaluate(&clause),
+            .evaluate(clause.iter().cloned()),
             EvaluationResult::False
         )
     }
 
     #[test]
     fn test_evaluate_clause_missing() {
-        let c = Clause::new(&vec![Literal::new(Variable(0), true)]);
-        assert_eq!(LiteralSet::new().evaluate(&c), EvaluationResult::Unknown)
+        let c = vec![Literal::new(Variable(0), true)];
+        assert_eq!(
+            LiteralSet::new().evaluate(c.iter().cloned()),
+            EvaluationResult::Unknown
+        )
     }
 }

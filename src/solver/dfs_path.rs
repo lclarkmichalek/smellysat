@@ -160,6 +160,7 @@ pub(crate) struct BacktrackResult {
 mod test {
     use crate::solver::{
         backtrack::{BacktrackStrategy, Conflict, DumbBacktrackStrategy},
+        clause_store::ClauseRef,
         dfs_path::*,
     };
 
@@ -200,7 +201,7 @@ mod test {
         let conflict = Conflict {
             conflicting_decision: None,
             conflicting_literal: notc,
-            conflicting_clause: &Clause::new(&vec![]),
+            conflicting_clause: ClauseRef::Unit(notc),
         };
 
         let backtrack_res = path.backtrack(

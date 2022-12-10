@@ -1,6 +1,7 @@
 mod assignment_set;
 mod backtrack;
 mod clause_index;
+mod clause_store;
 mod dfs_path;
 mod knowledge_graph;
 mod unit_propagator;

@@ -3,15 +3,15 @@ use log::trace;
 use crate::instance::{Clause, Literal};
 
 use super::{
-    assignment_set::LiteralSet,
+    clause_store::ClauseRef,
     dfs_path::{BacktrackResult, DFSPathEntry},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Conflict<'c> {
+pub(crate) struct Conflict {
     pub(crate) conflicting_decision: Option<Literal>,
     pub(crate) conflicting_literal: Literal,
-    pub(crate) conflicting_clause: &'c Clause,
+    pub(crate) conflicting_clause: ClauseRef,
 }
 
 pub(crate) trait BacktrackStrategy {
