@@ -65,6 +65,7 @@ impl Instance {
             initial_unit_count: 0,
             unit_prop_count: 0,
             backtrack_count: 0,
+            learnt_clause_count: 0,
         };
         let traversal_plan = TraversalPath {
             variables: self.variables.clone(),
@@ -114,8 +115,11 @@ impl Instance {
                     .iter()
                     .map(|&v| dfs_path.assignment().get(v).unwrap().invert())
                     .collect::<Vec<_>>();
-                trace!("new clause: {:?}", implied_clause);
-                clause_store.add_clause(implied_clause);
+                info!("new clause: {:?}", implied_clause);
+                let added = clause_store.add_clause(implied_clause);
+                if added.is_some() {
+                    stats.learnt_clause_count += 1;
+                }
 
                 match self.backtrack_and_pivot(
                     conflict,
@@ -203,6 +207,7 @@ pub struct EvaluationStats {
     initial_unit_count: usize,
     unit_prop_count: usize,
     backtrack_count: usize,
+    learnt_clause_count: usize,
 }
 
 #[derive(Clone)]

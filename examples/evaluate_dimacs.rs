@@ -3,6 +3,7 @@ extern crate itertools;
 extern crate smellysat;
 
 use itertools::Itertools;
+use log::info;
 use smellysat::dimacs;
 use std::{env, process};
 
@@ -59,5 +60,6 @@ fn run(filepath: &str) -> Result<(), Error> {
             println!("v {} 0", solution);
         }
     }
+    eprintln!("c stats {:?}", sol.stats);
     Ok(())
 }
