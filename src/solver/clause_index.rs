@@ -4,12 +4,16 @@ use fnv::{FnvHashMap, FnvHashSet};
 
 use crate::instance::*;
 
-use super::clause_store::{ClauseRef, ClauseStore};
+use super::clause_store::{ClauseRef, ClauseRefResolver, ClauseStore};
 
 #[derive(Clone)]
 pub(crate) struct ClauseIndex {
-    // mapping from variable to the indexes of clauses containing the variable
+    // Mapping from variable to the indexes of clauses containing the variable
     by_var: FnvHashMap<Variable, Vec<usize>>,
+    // Variables that have been marked resolved
+    resolved_vars: FnvHashSet<Variable>,
+    // Mapping from the reference of a clause to its index in the following lists
+    clause_ref_indexes: FnvHashMap<ClauseRef, usize>,
     // The number of free variables in the clause at the given index
     free_var_count: Vec<usize>,
     // no free var is used for evaluation. one free for unit prop.
@@ -20,21 +24,33 @@ pub(crate) struct ClauseIndex {
 
 impl ClauseIndex {
     // We assume at this point that all literals are free.
-    pub(crate) fn new(clauses: &Vec<Clause>) -> ClauseIndex {
+    pub(crate) fn new<'a, R>(resolver: R, clauses: &Vec<ClauseRef>) -> ClauseIndex
+    where
+        R: ClauseRefResolver<'a>,
+    {
         let free_var_count = clauses.iter().map(|c| c.len()).collect();
 
         let mut idx = ClauseIndex {
             by_var: FnvHashMap::default(),
+            resolved_vars: FnvHashSet::default(),
+            clause_ref_indexes: FnvHashMap::default(),
             free_var_count,
             no_free_var_clauses: FnvHashSet::default(),
             one_free_var_clauses: FnvHashSet::default(),
             two_free_var_clause_count: 0,
         };
 
-        for (i, clause) in clauses.iter().enumerate() {
-            for lit in clause.literals() {
+        for (i, &clause) in clauses.iter().enumerate() {
+            idx.clause_ref_indexes.insert(clause, i);
+        }
+
+        for (i, &clause) in clauses.iter().enumerate() {
+            for lit in resolver.clause_literals(clause) {
                 idx.by_var.entry(lit.var()).or_insert(vec![]).push(i);
             }
+        }
+
+        for (i, &clause) in clauses.iter().enumerate() {
             match clause.len() {
                 0 => {
                     panic!("empty clause: {:?}", i)
@@ -52,6 +68,8 @@ impl ClauseIndex {
     }
 
     pub(crate) fn mark_resolved(&mut self, var: Variable) {
+        self.resolved_vars.insert(var);
+
         let entry = self.by_var.get(&var);
         if entry.is_none() {
             return;
@@ -73,6 +91,8 @@ impl ClauseIndex {
     }
 
     pub(crate) fn mark_unresolved(&mut self, var: Variable) {
+        self.resolved_vars.remove(&var);
+
         if let Some(ixes) = self.by_var.get(&var) {
             for &ix in ixes {
                 self.free_var_count[ix] += 1;
@@ -90,6 +110,29 @@ impl ClauseIndex {
                     }
                     _ => {}
                 }
+            }
+        }
+    }
+
+    pub(crate) fn add_clause(&mut self, clause: ClauseRef, literals: &Vec<Literal>) {
+        let ix = self.free_var_count.len();
+        self.clause_ref_indexes.insert(clause, ix);
+
+        let free_count = literals
+            .iter()
+            .filter(|lit| !self.resolved_vars.contains(&lit.var()))
+            .count();
+        self.free_var_count.push(free_count);
+
+        match free_count {
+            0 => {
+                self.no_free_var_clauses.insert(ix);
+            }
+            1 => {
+                self.one_free_var_clauses.insert(ix);
+            }
+            _ => {
+                self.two_free_var_clause_count += 1;
             }
         }
     }

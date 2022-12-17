@@ -115,6 +115,7 @@ impl Instance {
                     .map(|&v| dfs_path.assignment().get(v).unwrap().invert())
                     .collect::<Vec<_>>();
                 trace!("new clause: {:?}", implied_clause);
+                clause_store.add_clause(implied_clause);
 
                 match self.backtrack_and_pivot(
                     conflict,

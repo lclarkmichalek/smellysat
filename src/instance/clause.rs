@@ -61,6 +61,10 @@ impl Clause {
     pub(crate) fn literals(&self) -> &Vec<Literal> {
         &self.literals
     }
+
+    pub(crate) fn into_literals(self) -> Vec<Literal> {
+        self.literals
+    }
 }
 
 impl fmt::Debug for Clause {
