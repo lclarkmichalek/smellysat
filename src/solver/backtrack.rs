@@ -1,10 +1,10 @@
 use log::trace;
 
-use crate::instance::{Clause, Literal};
+use crate::instance::Literal;
 
 use super::{
     clause_store::ClauseRef,
-    dfs_path::{BacktrackResult, DFSPathEntry},
+    trail::{BacktrackResult, TrailEntry},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,11 +16,11 @@ pub(crate) struct Conflict {
 
 pub(crate) trait BacktrackStrategy {
     /// Calculates how far we should roll back the search tree
-    fn find_backtrack_point(&self, path: &Vec<DFSPathEntry>, conflict: &Conflict) -> Option<usize>;
+    fn find_backtrack_point(&self, path: &Vec<TrailEntry>, conflict: &Conflict) -> Option<usize>;
     // Optionally specifies the next step that should be taken after the rollback
     fn next_decision(
         &self,
-        path: &Vec<DFSPathEntry>,
+        path: &Vec<TrailEntry>,
         conflict: &Conflict,
         result: &BacktrackResult,
     ) -> Option<Literal>;
@@ -30,16 +30,15 @@ pub(crate) trait BacktrackStrategy {
 pub(crate) struct DumbBacktrackStrategy {}
 
 impl BacktrackStrategy for DumbBacktrackStrategy {
-    fn find_backtrack_point(
-        &self,
-        path: &Vec<DFSPathEntry>,
-        _conflict: &Conflict,
-    ) -> Option<usize> {
+    fn find_backtrack_point(&self, path: &Vec<TrailEntry>, _conflict: &Conflict) -> Option<usize> {
         for (ix, entry) in path.iter().enumerate().rev() {
-            // If this was a left hand path (X=true), go down the right hand path this time.
-            // Else, continue
-            if entry.chosen.polarity() {
-                return Some(ix);
+            match entry.decision.map(|c| c.polarity()) {
+                // If there was no decision at this decision level, we are at the root - abort
+                None => return None,
+                // If this was a left hand path (X=true), go down the right hand path this time.
+                Some(true) => return Some(ix),
+                // Else, continue looking for a decision to revert
+                Some(false) => {}
             }
         }
         None
@@ -48,7 +47,7 @@ impl BacktrackStrategy for DumbBacktrackStrategy {
     // Go down the other path
     fn next_decision(
         &self,
-        _path: &Vec<DFSPathEntry>,
+        _path: &Vec<TrailEntry>,
         _conflict: &Conflict,
         result: &BacktrackResult,
     ) -> Option<Literal> {

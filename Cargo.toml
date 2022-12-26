@@ -11,6 +11,7 @@ fnv = "1.0.3"
 prometheus = "0.13.3"
 log = "0.4.17"
 itertools = "0.10.5"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 itertools = "0.10.5"

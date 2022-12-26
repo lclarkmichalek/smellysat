@@ -291,6 +291,7 @@ dependencies = [
  "env_logger",
  "fnv",
  "itertools",
+ "lazy_static",
  "log",
  "prometheus",
  "thiserror",

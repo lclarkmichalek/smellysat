@@ -7,25 +7,25 @@ use crate::instance::*;
 use super::assignment_set::EvaluationResult;
 use super::backtrack::Conflict;
 use super::clause_store::{ClauseRef, ClauseStore};
-use super::dfs_path::DFSPath;
 use super::knowledge_graph::KnowledgeGraph;
+use super::trail::Trail;
 use itertools::Itertools;
 
 pub(crate) struct UnitPropagator<'a> {
     clause_store: &'a mut ClauseStore,
-    dfs_path: &'a mut DFSPath,
+    trail: &'a mut Trail,
     knowledge_graph: &'a mut KnowledgeGraph,
 }
 
 impl<'a> UnitPropagator<'a> {
     pub(crate) fn new(
         clause_store: &'a mut ClauseStore,
-        dfs_path: &'a mut DFSPath,
+        trail: &'a mut Trail,
         knowledge_graph: &'a mut KnowledgeGraph,
     ) -> UnitPropagator<'a> {
         UnitPropagator {
             clause_store,
-            dfs_path,
+            trail,
             knowledge_graph,
         }
     }
@@ -34,19 +34,19 @@ impl<'a> UnitPropagator<'a> {
         // So we run through the untested literals, and check all of the relevant candidate clauses.
         // If any of them are invalid, return the conflict
         let untested_literals = self
-            .dfs_path
+            .trail
             .assignments_since_last_decision()
             .as_assignment_vec();
         for &literal in untested_literals.iter() {
             for clause in self.clause_store.idx().find_evaluatable_candidates(literal) {
                 match self
-                    .dfs_path
+                    .trail
                     .assignment()
                     .evaluate(clause.literals(&self.clause_store))
                 {
                     EvaluationResult::False => {
                         return Some(Conflict {
-                            conflicting_decision: self.dfs_path.last_decision(),
+                            conflicting_decision: self.trail.last_decision(),
                             conflicting_literal: literal,
                             conflicting_clause: clause,
                         });
@@ -62,14 +62,14 @@ impl<'a> UnitPropagator<'a> {
     pub(crate) fn propagate_units(&mut self) -> Option<Conflict> {
         let mut queue = VecDeque::new();
         queue.extend(
-            self.dfs_path
+            self.trail
                 .assignments_since_last_decision()
                 .as_assignment_vec(),
         );
         trace!("q: {:?}", queue);
 
         while !queue.is_empty() {
-            trace!("assignment: {:?}", self.dfs_path.assignment());
+            trace!("assignment: {:?}", self.trail.assignment());
 
             let literal = queue.pop_back().unwrap();
             trace!("lit: {:?}", literal);
@@ -80,13 +80,13 @@ impl<'a> UnitPropagator<'a> {
                 match self.propagate_unit(literal, clause) {
                     PropagationResult::Conflicted(conflict) => return Some(conflict),
                     PropagationResult::Inferred(inferred) => {
-                        // Important: propagate_unit takes its assignment from dfs_path. Deferring
+                        // Important: propagate_unit takes its assignment from trail. Deferring
                         // adding to the dfs path causes issues
-                        self.dfs_path.add_inferred(inferred);
+                        self.trail.add_inferred(inferred);
                         self.knowledge_graph.add_inferred(
                             inferred,
                             literal,
-                            self.dfs_path.last_decision(),
+                            self.trail.last_decision(),
                             clause,
                         );
                         self.clause_store.mark_resolved(inferred.var());
@@ -101,7 +101,7 @@ impl<'a> UnitPropagator<'a> {
     }
 
     fn propagate_unit(&self, literal: Literal, clause: ClauseRef) -> PropagationResult {
-        let assignment = self.dfs_path.assignment();
+        let assignment = self.trail.assignment();
 
         let mut last_free = None;
         for literal in clause.literals(&self.clause_store) {
@@ -122,7 +122,7 @@ impl<'a> UnitPropagator<'a> {
         match last_free {
             Some(lit) => PropagationResult::Inferred(lit),
             None => PropagationResult::Conflicted(Conflict {
-                conflicting_decision: self.dfs_path.last_decision(),
+                conflicting_decision: self.trail.last_decision(),
                 conflicting_literal: literal,
                 conflicting_clause: clause,
             }),
@@ -181,8 +181,8 @@ mod test {
     use crate::{
         instance::*,
         solver::{
-            assignment_set::LiteralSet, clause_store::ClauseStore, dfs_path::DFSPath,
-            knowledge_graph::KnowledgeGraph, unit_propagator::UnitPropagator,
+            assignment_set::LiteralSet, clause_store::ClauseStore, knowledge_graph::KnowledgeGraph,
+            trail::Trail, unit_propagator::UnitPropagator,
         },
     };
 
@@ -200,22 +200,22 @@ mod test {
 
         let mut clause_store = ClauseStore::new(vec![clause]);
         trace!("store: {:?}", clause_store);
-        let mut dfs_path = DFSPath::new(LiteralSet::new());
+        let mut trail = Trail::new();
         let mut knowledge_graph = KnowledgeGraph::new(2);
 
         let decision = a.invert();
-        dfs_path.add_decision(decision);
+        trail.add_decision(decision);
         clause_store.mark_resolved(decision.var());
         knowledge_graph.add_decision(decision);
 
         let mut unit_propagator =
-            UnitPropagator::new(&mut clause_store, &mut dfs_path, &mut knowledge_graph);
+            UnitPropagator::new(&mut clause_store, &mut trail, &mut knowledge_graph);
 
         let result = unit_propagator.propagate_units();
 
         assert_eq!(result, None);
         assert_eq!(
-            dfs_path.assignment(),
+            trail.assignment(),
             &LiteralSet::from_assignment_vec(&vec![a.invert(), b.invert()])
         );
     }
@@ -233,16 +233,16 @@ mod test {
         let clauses = vec![clause_one, clause_two];
 
         let mut clause_store = ClauseStore::new(clauses);
-        let mut dfs_path = DFSPath::new(LiteralSet::new());
+        let mut trail = Trail::new();
         let mut knowledge_graph = KnowledgeGraph::new(2);
 
         let decision = Literal::new(a, false);
-        dfs_path.add_decision(decision);
+        trail.add_decision(decision);
         clause_store.mark_resolved(a);
         knowledge_graph.add_decision(decision);
 
         let mut unit_propagator =
-            UnitPropagator::new(&mut clause_store, &mut dfs_path, &mut knowledge_graph);
+            UnitPropagator::new(&mut clause_store, &mut trail, &mut knowledge_graph);
 
         let result = unit_propagator.propagate_units();
 

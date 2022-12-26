@@ -1,73 +1,72 @@
+use lazy_static::lazy_static;
+
 use crate::instance::*;
 use core::fmt;
 
 use super::assignment_set::LiteralSet;
 
-/// Stores the traversal path of the DFS. Should be the source of truth for what needs to be reverted upon backtrack.
-/// Note: we do not have a root node. An untraversed path has an empty
-
-#[derive(Clone)]
-pub(crate) struct DFSPath {
-    path: Vec<DFSPathEntry>,
-    initial_assignment: LiteralSet,
-    assignment: LiteralSet,
+lazy_static! {
+    static ref EMPTY_LIT_SET: LiteralSet = LiteralSet::new();
 }
 
-impl DFSPath {
-    // Takes an initial assignment that cannot be backtracked
-    pub(crate) fn new(initial_assignment: LiteralSet) -> DFSPath {
-        DFSPath {
-            path: vec![],
-            assignment: initial_assignment.clone(),
-            initial_assignment,
+/// Stores the traversal path of the DFS. Should be the source of truth for what needs to be reverted upon backtrack.
+/// Note: we do not have a root node. An untraversed path has no trail
+
+#[derive(Clone)]
+pub(crate) struct Trail {
+    // Trail will never be empty - the first element stores decision level 0
+    trail: Vec<TrailEntry>,
+    cumulative_assignment: LiteralSet,
+}
+
+impl Trail {
+    pub(crate) fn new() -> Trail {
+        Trail {
+            trail: vec![TrailEntry::new(None)],
+            cumulative_assignment: LiteralSet::new(),
         }
     }
 
-    /// The number of decisions taken, minus decisions backtracked
-    pub(crate) fn depth(&self) -> usize {
-        self.path.len()
+    /// The number of decisions in the current assignment
+    pub(crate) fn current_decision_level(&self) -> usize {
+        self.trail.len() - 1
     }
 
     pub(crate) fn assignment(&self) -> &LiteralSet {
-        &self.assignment
+        &self.cumulative_assignment
     }
 
     /// In the case of no decision being made prior to this function being called, we return the initial assignment set
     pub(crate) fn assignments_since_last_decision(&self) -> &LiteralSet {
-        match self.path.last() {
+        match self.trail.last() {
             Some(entry) => &entry.all,
-            None => &self.initial_assignment,
+            None => &EMPTY_LIT_SET,
         }
     }
 
     pub(crate) fn last_decision(&self) -> Option<Literal> {
-        self.path.last().map(|e| e.chosen)
+        self.trail.last().unwrap().decision
     }
 
     // Records a step in the DFS search
     pub(crate) fn add_decision(&mut self, literal: Literal) {
         self.require_unset(literal);
 
-        self.assignment.add(literal);
-        self.path.push(DFSPathEntry::new(literal));
+        self.cumulative_assignment.add(literal);
+        self.trail.push(TrailEntry::new(Some(literal)));
     }
 
     // Records an inferred assignment
     pub(crate) fn add_inferred(&mut self, literal: Literal) {
         self.require_unset(literal);
 
-        self.assignment.add(literal);
-        match self.path.last_mut() {
+        self.cumulative_assignment.add(literal);
+        match self.trail.last_mut() {
             Some(last_step) => {
                 last_step.inferred.push(literal);
                 last_step.all.add(literal);
             }
-            None => {
-                // Ok, now shits getting fucky. If we've inferred something without taking a step,
-                // then presumably we're in the first round of unit prop. Cosequentially, it's
-                // really part of the initial assignment.
-                self.initial_assignment.add(literal);
-            }
+            None => {}
         }
     }
 
@@ -80,19 +79,21 @@ impl DFSPath {
         let result = self.execute_backtrack(pivot);
 
         for &literal in result.assignments.iter() {
-            self.assignment.remove(literal);
+            self.cumulative_assignment.remove(literal);
         }
 
         result
     }
 
     fn execute_backtrack(&mut self, point: usize) -> BacktrackResult {
-        let dropped = self.path.drain(point..).collect::<Vec<_>>();
-        let last_decision = dropped.first().map(|e| e.chosen);
+        let dropped = self.trail.drain(point..).collect::<Vec<_>>();
+        let last_decision = dropped.first().map(|e| e.decision).flatten();
         let mut assignments = vec![];
         for entry in dropped.into_iter() {
             assignments.extend(entry.inferred);
-            assignments.push(entry.chosen);
+            if let Some(chosen) = entry.decision {
+                assignments.push(chosen);
+            }
         }
 
         BacktrackResult {
@@ -103,10 +104,10 @@ impl DFSPath {
 
     #[cfg(debug_assertions)]
     fn require_unset(&self, literal: Literal) {
-        if self.assignment.contains(literal) {
+        if self.cumulative_assignment.contains(literal) {
             panic!("{:?} already in assignment", literal);
         }
-        if self.assignment.contains(literal.invert()) {
+        if self.cumulative_assignment.contains(literal.invert()) {
             panic!("inverse {:?} already in assignment", literal.invert())
         }
     }
@@ -114,35 +115,37 @@ impl DFSPath {
     #[cfg(not(debug_assertions))]
     fn require_unset(&self, _literal: Literal) {}
 
-    pub(crate) fn search_path(&self) -> &Vec<DFSPathEntry> {
-        &self.path
+    pub(crate) fn search_path(&self) -> &Vec<TrailEntry> {
+        &self.trail
     }
 }
 
-impl fmt::Debug for DFSPath {
+impl fmt::Debug for Trail {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "DFSPath {{ depth={:?}, assignment=[{:?}] }}",
-            self.depth(),
+            "Trail {{ depth={:?}, assignment=[{:?}] }}",
+            self.current_decision_level(),
             self.assignment()
         )
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct DFSPathEntry {
-    pub(crate) chosen: Literal,
+pub(crate) struct TrailEntry {
+    pub(crate) decision: Option<Literal>,
     pub(crate) inferred: Vec<Literal>,
     pub(crate) all: LiteralSet,
 }
 
-impl DFSPathEntry {
-    fn new(literal: Literal) -> DFSPathEntry {
+impl TrailEntry {
+    fn new(literal: Option<Literal>) -> TrailEntry {
         let mut ls = LiteralSet::new();
-        ls.add(literal);
-        DFSPathEntry {
-            chosen: literal,
+        if let Some(lit) = literal {
+            ls.add(lit);
+        }
+        TrailEntry {
+            decision: literal,
             inferred: vec![],
             all: ls,
         }
@@ -161,7 +164,7 @@ mod test {
     use crate::solver::{
         backtrack::{BacktrackStrategy, Conflict, DumbBacktrackStrategy},
         clause_store::ClauseRef,
-        dfs_path::*,
+        trail::*,
     };
 
     #[test]
@@ -170,18 +173,18 @@ mod test {
         let b = Variable(1);
         let c = Variable(2);
 
-        let mut sp = DFSPath::new(LiteralSet::new());
+        let mut sp = Trail::new();
 
         sp.add_decision(Literal::new(a, true));
-        assert_eq!(sp.depth(), 1);
+        assert_eq!(sp.current_decision_level(), 1);
         assert_eq!(sp.assignment().size(), 1);
 
         sp.add_inferred(Literal::new(b, true));
-        assert_eq!(sp.depth(), 1);
+        assert_eq!(sp.current_decision_level(), 1);
         assert_eq!(sp.assignment().size(), 2);
 
         sp.add_inferred(Literal::new(c, true));
-        assert_eq!(sp.depth(), 1);
+        assert_eq!(sp.current_decision_level(), 1);
         assert_eq!(sp.assignment().size(), 3);
     }
 
@@ -193,7 +196,7 @@ mod test {
         let c = Variable(2);
         let notc = Literal::new(c, false);
 
-        let mut path = DFSPath::new(LiteralSet::new());
+        let mut path = Trail::new();
         let strategy = DumbBacktrackStrategy {};
 
         path.add_decision(Literal::new(a, true));
@@ -209,7 +212,7 @@ mod test {
                 .find_backtrack_point(path.search_path(), &conflict)
                 .unwrap(),
         );
-        assert_eq!(path.depth(), 0);
+        assert_eq!(path.current_decision_level(), 0);
         assert_eq!(backtrack_res.assignments, vec![notc, Literal::new(a, true)]);
         assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
 
@@ -222,7 +225,7 @@ mod test {
                 .find_backtrack_point(path.search_path(), &conflict)
                 .unwrap(),
         );
-        assert_eq!(path.depth(), 0);
+        assert_eq!(path.current_decision_level(), 0);
         assert_eq!(
             backtrack_res.assignments,
             vec![Literal::new(a, true), notc, Literal::new(b, false)]

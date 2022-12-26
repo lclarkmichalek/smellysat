@@ -5,14 +5,13 @@ use log::{info, trace};
 
 use crate::instance::*;
 use crate::solver::backtrack::{BacktrackStrategy, DumbBacktrackStrategy};
-use crate::solver::dfs_path::DFSPath;
 use crate::solver::knowledge_graph::KnowledgeGraph;
+use crate::solver::trail::Trail;
 use crate::solver::unit_propagator::{find_inital_assignment, InitialAssignmentResult};
 use crate::variable_registry::VariableRegister;
 
 use super::assignment_set::LiteralSet;
 use super::backtrack::Conflict;
-use super::clause_index::ClauseIndex;
 use super::clause_store::ClauseStore;
 use super::unit_propagator::{record_initial_assignment, UnitPropagator};
 
@@ -22,7 +21,7 @@ struct TraversalPath {
 }
 
 impl TraversalPath {
-    fn next(&self, path: &DFSPath) -> Option<&Variable> {
+    fn next(&self, path: &Trail) -> Option<&Variable> {
         self.variables
             .iter()
             .filter(|&&l| path.assignment().get(l).is_none())
@@ -86,25 +85,28 @@ impl Instance {
         };
 
         record_initial_assignment(&mut clause_store, &mut knowledge_graph, &initial_assignment);
-        let mut dfs_path = DFSPath::new(LiteralSet::from_assignment_vec(&initial_assignment));
+        let mut trail = Trail::new();
+        for lit in initial_assignment {
+            trail.add_inferred(lit)
+        }
 
-        stats.initial_unit_count = dfs_path.assignment().size();
+        stats.initial_unit_count = trail.assignment().size();
 
         if clause_store.idx().all_clauses_resolved() {
             info!("solved through initial unit assignment");
             return Solution {
                 literals: self.variables.clone(),
-                solution: Some(dfs_path.assignment().clone()),
+                solution: Some(trail.assignment().clone()),
                 stats,
             };
         }
 
         loop {
             let mut unit_prop =
-                UnitPropagator::new(&mut clause_store, &mut dfs_path, &mut knowledge_graph);
+                UnitPropagator::new(&mut clause_store, &mut trail, &mut knowledge_graph);
 
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
-            stats.unit_prop_count += dfs_path.assignments_since_last_decision().size();
+            stats.unit_prop_count += trail.assignments_since_last_decision().size();
             if let Some(conflict) = prop_eval_result {
                 trace!("conflict: {:?}", conflict);
                 stats.backtrack_count += 1;
@@ -113,7 +115,7 @@ impl Instance {
                 trace!("conflict involved decisions: {:?}", implicated_vars,);
                 let implied_clause = implicated_vars
                     .iter()
-                    .map(|&v| dfs_path.assignment().get(v).unwrap().invert())
+                    .map(|&v| trail.assignment().get(v).unwrap().invert())
                     .collect::<Vec<_>>();
                 info!("new clause: {:?}", implied_clause);
                 let added = clause_store.add_clause(implied_clause);
@@ -123,7 +125,7 @@ impl Instance {
 
                 match self.backtrack_and_pivot(
                     conflict,
-                    &mut dfs_path,
+                    &mut trail,
                     &mut clause_store,
                     &mut knowledge_graph,
                 ) {
@@ -141,16 +143,16 @@ impl Instance {
             if clause_store.idx().all_clauses_resolved() {
                 return Solution {
                     literals: self.variables.clone(),
-                    solution: Some(dfs_path.assignment().clone()),
+                    solution: Some(trail.assignment().clone()),
                     stats: stats,
                 };
             }
 
             // Now, keep stepping into the problem
-            if let Some(&var) = traversal_plan.next(&dfs_path) {
+            if let Some(&var) = traversal_plan.next(&trail) {
                 let lit = Literal::new(var, true);
                 stats.step_count += 1;
-                dfs_path.add_decision(lit);
+                trail.add_decision(lit);
                 knowledge_graph.add_decision(lit);
                 clause_store.mark_resolved(var)
             } else {
@@ -163,7 +165,7 @@ impl Instance {
     fn backtrack_and_pivot(
         &self,
         conflict: Conflict,
-        path: &mut DFSPath,
+        path: &mut Trail,
         clause_store: &mut ClauseStore,
         knowledge_graph: &mut KnowledgeGraph,
     ) -> Option<()> {
