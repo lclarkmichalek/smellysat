@@ -10,7 +10,7 @@ impl fmt::Debug for Variable {
 }
 
 impl Variable {
-    pub(crate) fn index(&self) -> u64 {
-        self.0
+    pub(crate) fn idx(&self) -> usize {
+        self.0 as usize
     }
 }

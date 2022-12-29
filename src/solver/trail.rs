@@ -1,4 +1,6 @@
+use fnv::FnvHashMap;
 use lazy_static::lazy_static;
+use log::info;
 
 use crate::instance::*;
 use core::fmt;
@@ -17,6 +19,7 @@ pub(crate) struct Trail {
     // Trail will never be empty - the first element stores decision level 0
     trail: Vec<TrailEntry>,
     cumulative_assignment: LiteralSet,
+    decision_levels: FnvHashMap<Variable, usize>,
 }
 
 impl Trail {
@@ -24,6 +27,7 @@ impl Trail {
         Trail {
             trail: vec![TrailEntry::new(None)],
             cumulative_assignment: LiteralSet::new(),
+            decision_levels: FnvHashMap::default(),
         }
     }
 
@@ -54,6 +58,8 @@ impl Trail {
 
         self.cumulative_assignment.add(literal);
         self.trail.push(TrailEntry::new(Some(literal)));
+        self.decision_levels
+            .insert(literal.var(), self.current_decision_level());
     }
 
     // Records an inferred assignment
@@ -76,17 +82,11 @@ impl Trail {
     ///
     /// The DFSPatt state (such as the assignment) will be rolled back as part of this.
     pub(crate) fn backtrack(&mut self, pivot: usize) -> BacktrackResult {
-        let result = self.execute_backtrack(pivot);
-
-        for &literal in result.assignments.iter() {
-            self.cumulative_assignment.remove(literal);
-        }
-
-        result
-    }
-
-    fn execute_backtrack(&mut self, point: usize) -> BacktrackResult {
-        let dropped = self.trail.drain(point..).collect::<Vec<_>>();
+        info!(
+            "backtracking {} decision levels to {pivot}",
+            self.trail.len() - pivot - 1
+        );
+        let dropped = self.trail.drain(pivot + 1..).collect::<Vec<_>>();
         let last_decision = dropped.first().map(|e| e.decision).flatten();
         let mut assignments = vec![];
         for entry in dropped.into_iter() {
@@ -94,6 +94,13 @@ impl Trail {
             if let Some(chosen) = entry.decision {
                 assignments.push(chosen);
             }
+            if let Some(decision) = entry.decision {
+                self.decision_levels.remove(&decision.var());
+            }
+        }
+
+        for &literal in assignments.iter() {
+            self.cumulative_assignment.remove(literal);
         }
 
         BacktrackResult {
@@ -117,6 +124,14 @@ impl Trail {
 
     pub(crate) fn search_path(&self) -> &Vec<TrailEntry> {
         &self.trail
+    }
+
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator + ExactSizeIterator<Item = &TrailEntry> {
+        self.trail.iter()
+    }
+
+    pub(crate) fn find_decision_level(&self, var: Variable) -> Option<usize> {
+        self.decision_levels.get(&var).copied()
     }
 }
 
@@ -150,6 +165,13 @@ impl TrailEntry {
             all: ls,
         }
     }
+
+    /// Iterates over literals in the order they were added to the trail
+    pub(crate) fn iter_literals(&self) -> impl DoubleEndedIterator<Item = &Literal> {
+        std::iter::once(&self.decision)
+            .filter_map(|x| x.as_ref())
+            .chain(self.inferred.iter())
+    }
 }
 
 #[derive(Clone)]
@@ -162,7 +184,7 @@ pub(crate) struct BacktrackResult {
 #[cfg(test)]
 mod test {
     use crate::solver::{
-        backtrack::{BacktrackStrategy, Conflict, DumbBacktrackStrategy},
+        backtrack::{Conflict, DumbBacktrackStrategy},
         clause_store::ClauseRef,
         trail::*,
     };
@@ -207,29 +229,29 @@ mod test {
             conflicting_clause: ClauseRef::Unit(notc),
         };
 
-        let backtrack_res = path.backtrack(
-            strategy
-                .find_backtrack_point(path.search_path(), &conflict)
-                .unwrap(),
-        );
-        assert_eq!(path.current_decision_level(), 0);
-        assert_eq!(backtrack_res.assignments, vec![notc, Literal::new(a, true)]);
-        assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
+        // let backtrack_res = path.backtrack(
+        //     strategy
+        //         .find_backtrack_point(path.search_path(), &conflict)
+        //         .unwrap(),
+        // );
+        // assert_eq!(path.current_decision_level(), 0);
+        // assert_eq!(backtrack_res.assignments, vec![notc, Literal::new(a, true)]);
+        // assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
 
-        // Here we will backtrack up to A, as we've explored B's true path earlier
-        path.add_decision(Literal::new(a, true));
-        path.add_decision(Literal::new(b, false));
-        path.add_inferred(notc);
-        let backtrack_res = path.backtrack(
-            strategy
-                .find_backtrack_point(path.search_path(), &conflict)
-                .unwrap(),
-        );
-        assert_eq!(path.current_decision_level(), 0);
-        assert_eq!(
-            backtrack_res.assignments,
-            vec![Literal::new(a, true), notc, Literal::new(b, false)]
-        );
-        assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
+        // // Here we will backtrack up to A, as we've explored B's true path earlier
+        // path.add_decision(Literal::new(a, true));
+        // path.add_decision(Literal::new(b, false));
+        // path.add_inferred(notc);
+        // let backtrack_res = path.backtrack(
+        //     strategy
+        //         .find_backtrack_point(path.search_path(), &conflict)
+        //         .unwrap(),
+        // );
+        // assert_eq!(path.current_decision_level(), 0);
+        // assert_eq!(
+        //     backtrack_res.assignments,
+        //     vec![Literal::new(a, true), notc, Literal::new(b, false)]
+        // );
+        // assert_eq!(backtrack_res.last_decision, Some(Literal::new(a, true)));
     }
 }

@@ -135,6 +135,9 @@ impl ClauseIndex {
                 self.two_free_var_clause_count += 1;
             }
         }
+        for lit in literals {
+            self.by_var.entry(lit.var()).or_insert(vec![]).push(ix);
+        }
     }
 }
 

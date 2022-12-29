@@ -1,3 +1,5 @@
+use is_sorted::IsSorted;
+use log::info;
 use std::hash::Hasher;
 
 use crate::instance::{Clause, Literal, Variable};
@@ -33,6 +35,10 @@ impl ClauseStore {
         self.clauses.get(ix)
     }
 
+    pub(crate) fn contains(&self, clause: &Vec<Literal>) -> bool {
+        self.clauses.contains(clause)
+    }
+
     pub(crate) fn mark_resolved(&mut self, var: Variable) {
         self.index.mark_resolved(var)
     }
@@ -42,8 +48,9 @@ impl ClauseStore {
     }
 
     pub(crate) fn add_clause(&mut self, clause_literals: Vec<Literal>) -> Option<ClauseRef> {
-        let clause = self.clauses.add_clause(&clause_literals)?;
+        let clause = self.clauses.add_clause(clause_literals.clone())?;
         self.index.add_clause(clause, &clause_literals);
+        info!("added clause: {:?}", clause_literals);
         Some(clause)
     }
 }
@@ -71,26 +78,31 @@ impl ClauseList {
         ClauseList { literals, offsets }
     }
 
-    fn add_clause(&mut self, clause: &Vec<Literal>) -> Option<ClauseRef> {
-        let mut copy = clause.clone();
-        copy.sort();
-
+    fn contains(&self, clause: &Vec<Literal>) -> bool {
+        ensure_sorted(clause);
         // Check we haven't already seen this clause!
         for cl in self.iter() {
             if cl.len() != clause.len() {
                 continue;
             }
-            if cl.literals_from_list(self).eq(copy.iter().copied()) {
+            if cl.literals_from_list(self).eq(clause.iter().copied()) {
                 // This clause is already in the dataset
-                return None;
+                return true;
             }
+        }
+        false
+    }
+
+    fn add_clause(&mut self, clause: Vec<Literal>) -> Option<ClauseRef> {
+        if self.contains(&clause) {
+            return None;
         }
 
         // otherwise, add
         let offset = self.literals.len();
         self.offsets.push(offset);
-        let clause_len = copy.len();
-        self.literals.extend(copy);
+        let clause_len = clause.len();
+        self.literals.extend(clause);
         Some(self.mk_ref(offset, clause_len))
     }
 
@@ -315,6 +327,16 @@ impl<'a> Iterator for ClauseLiteralsIterator<'a> {
 impl<'a> ExactSizeIterator for ClauseLiteralsIterator<'a> {
     fn len(&self) -> usize {
         self.size_hint().0
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn ensure_sorted(_: &Vec<Literal>) {}
+
+#[cfg(debug_assertions)]
+fn ensure_sorted(lits: &Vec<Literal>) {
+    if !lits.iter().is_sorted() {
+        panic!("must be sorted");
     }
 }
 

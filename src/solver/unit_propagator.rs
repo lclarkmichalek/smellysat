@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use log::trace;
+use log::{info, trace};
 
 use crate::instance::*;
 
@@ -66,17 +66,12 @@ impl<'a> UnitPropagator<'a> {
                 .assignments_since_last_decision()
                 .as_assignment_vec(),
         );
-        trace!("q: {:?}", queue);
 
         while !queue.is_empty() {
-            trace!("assignment: {:?}", self.trail.assignment());
-
             let literal = queue.pop_back().unwrap();
-            trace!("lit: {:?}", literal);
             // Build this list to avoid writing to the clause_index during the loop over borrowed clauses
             let mut inferred_literals = vec![];
             for clause in self.clause_store.idx().find_unit_prop_candidates(literal) {
-                trace!("clause: {:?}", clause);
                 match self.propagate_unit(literal, clause) {
                     PropagationResult::Conflicted(conflict) => return Some(conflict),
                     PropagationResult::Inferred(inferred) => {

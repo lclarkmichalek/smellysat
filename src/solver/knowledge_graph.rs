@@ -9,6 +9,7 @@ use crate::instance::*;
 use super::{
     backtrack::Conflict,
     clause_store::{ClauseRef, ClauseRefResolver, ClauseStore},
+    sorted_vec::sort_and_dedupe,
     trail::Trail,
 };
 
@@ -37,7 +38,7 @@ impl KnowledgeGraph {
 
     pub(crate) fn add_decision(&mut self, decision: Literal) {
         trace!("decision: {:?}", decision);
-        let v = &mut self.vertices[decision.var().index() as usize];
+        let v = &mut self.vertices[decision.var().idx()];
         v.trigger = None;
         v.decision = Some(decision.var());
         v.clause = None;
@@ -51,7 +52,7 @@ impl KnowledgeGraph {
         clause: ClauseRef,
     ) {
         trace!("inference: {:?}", inferred);
-        let v = &mut self.vertices[inferred.var().index() as usize];
+        let v = &mut self.vertices[inferred.var().idx()];
         v.trigger = Some(trigger.var());
         v.decision = decision.map(|l| l.var());
         v.clause = Some(clause);
@@ -59,69 +60,15 @@ impl KnowledgeGraph {
 
     pub(crate) fn remove(&mut self, literals: &Vec<Literal>) {
         for literal in literals.iter() {
-            let v = &mut self.vertices[literal.var().index() as usize];
+            let v = &mut self.vertices[literal.var().idx()];
             v.trigger = None;
             v.decision = None;
             v.clause = None;
         }
     }
 
-    pub(crate) fn inference_path(&self, conflict: &Conflict) -> Vec<Variable> {
-        let mut path = vec![conflict.conflicting_literal.var()];
-        let mut ptr = &self.vertices[conflict.conflicting_literal.var().index() as usize];
-        loop {
-            match ptr.trigger {
-                None => break,
-                Some(var) => {
-                    path.push(var);
-                    ptr = &self.vertices[var.index() as usize];
-                }
-            }
-        }
-        path
-    }
-
-    pub(crate) fn find_implicated_decision_variables(
-        &self,
-        store: &ClauseStore,
-        conflict: &Conflict,
-    ) -> Vec<Variable> {
-        let mut decisions = vec![];
-        let mut seen = FnvHashSet::default();
-        let mut queue = VecDeque::new();
-
-        let conflict_var = conflict.conflicting_literal.var();
-        queue.push_back(conflict_var);
-        for lit in conflict.conflicting_clause.literals(&store) {
-            queue.push_back(lit.var());
-        }
-
-        loop {
-            let var = match queue.pop_front() {
-                None => break,
-                Some(x) => x,
-            };
-            if seen.contains(&var) {
-                continue;
-            }
-            seen.insert(var);
-            let node = &self.vertices[var.index() as usize];
-
-            if node.trigger.is_none() {
-                decisions.push(var);
-                continue;
-            }
-
-            if let Some(clause) = node.clause {
-                for literal in clause.literals(&store) {
-                    if !seen.contains(&literal.var()) {
-                        queue.push_back(literal.var());
-                    }
-                }
-            }
-        }
-
-        decisions
+    pub(crate) fn vertex(&self, var: Variable) -> &Node {
+        &self.vertices[var.idx()]
     }
 
     pub(crate) fn as_dot(&self, store: &ClauseStore, trail: &Trail) -> String {
@@ -138,7 +85,7 @@ impl KnowledgeGraph {
                 ));
             }
             for &inference in level.inferred.iter() {
-                let vertex = &self.vertices[inference.var().index() as usize];
+                let vertex = self.vertex(inference.var());
                 if vertex.trigger.is_none() {
                     // if this was a unit, and inferred in decision level 0
                     lines.push(format!(
@@ -188,12 +135,13 @@ impl KnowledgeGraph {
     }
 }
 
-struct Node {
-    // The decision or inference that enabled unit prop to arrive here.
-    // If this node was set as part of a decision, this will be None
-    trigger: Option<Variable>,
-    // The last decision made before unit prop arrived here
-    decision: Option<Variable>,
-    // The clause that allowed us to infer our way here
-    clause: Option<ClauseRef>,
+#[derive(PartialEq, Eq, Hash, Debug)]
+pub(crate) struct Node {
+    /// The decision or inference that enabled unit prop to arrive here.
+    /// If this node was set as part of a decision, this will be None
+    pub(crate) trigger: Option<Variable>,
+    /// The last decision made before unit prop arrived here
+    pub(crate) decision: Option<Variable>,
+    /// The clause that allowed us to infer our way here
+    pub(crate) clause: Option<ClauseRef>,
 }

@@ -3,8 +3,6 @@ use core::fmt;
 
 use fnv::FnvHashMap;
 
-use super::clause_store::{ClauseRef, ClauseStore};
-
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct LiteralSet {
     values: FnvHashMap<Variable, bool>,

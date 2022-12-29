@@ -4,14 +4,15 @@ use std::rc::Rc;
 use log::{info, trace};
 
 use crate::instance::*;
-use crate::solver::backtrack::{BacktrackStrategy, DumbBacktrackStrategy};
+use crate::solver::backtrack::{BacktrackStrategy, ConflictAnalyzer, DumbBacktrackStrategy};
 use crate::solver::knowledge_graph::KnowledgeGraph;
+use crate::solver::sorted_vec::sort_and_dedupe;
 use crate::solver::trail::Trail;
 use crate::solver::unit_propagator::{find_inital_assignment, InitialAssignmentResult};
 use crate::variable_registry::VariableRegister;
 
 use super::assignment_set::LiteralSet;
-use super::backtrack::Conflict;
+use super::backtrack::{AnalyzedConflict, BackjumpStrategy, Conflict};
 use super::clause_store::ClauseStore;
 use super::unit_propagator::{record_initial_assignment, UnitPropagator};
 
@@ -55,7 +56,7 @@ impl Instance {
     }
 
     fn backtrack_strategy() -> Rc<dyn BacktrackStrategy> {
-        Rc::new(DumbBacktrackStrategy {})
+        Rc::new(BackjumpStrategy {})
     }
 
     pub fn solve(&mut self) -> Solution {
@@ -102,50 +103,68 @@ impl Instance {
         }
 
         loop {
+            trace!("========");
+            trace!(
+                "iteration starting. level: {}",
+                trail.current_decision_level()
+            );
+            let mut ass = trail.assignment().as_assignment_vec();
+            sort_and_dedupe(&mut ass);
+            trace!("assignment: {:?}", ass,);
+            trace!("========");
+
+            let deduced = trail.assignments_since_last_decision().size();
             let mut unit_prop =
                 UnitPropagator::new(&mut clause_store, &mut trail, &mut knowledge_graph);
-
             let prop_eval_result = unit_prop.propagate_units().or_else(|| unit_prop.evaluate());
-            stats.unit_prop_count += trail.assignments_since_last_decision().size();
+            stats.unit_prop_count += trail.assignments_since_last_decision().size() - deduced;
+
             if let Some(conflict) = prop_eval_result {
-                trace!("conflict: {:?}", conflict);
-                trace!("kg: {}", knowledge_graph.as_dot_url(&clause_store, &trail));
-                stats.backtrack_count += 1;
-                let implicated_vars =
-                    knowledge_graph.find_implicated_decision_variables(&clause_store, &conflict);
-                trace!("conflict involved decisions: {:?}", implicated_vars,);
-                let implied_clause = implicated_vars
-                    .iter()
-                    .map(|&v| trail.assignment().get(v).unwrap().invert())
-                    .collect::<Vec<_>>();
-                info!("new clause: {:?}", implied_clause);
-                let added = clause_store.add_clause(implied_clause);
-                if added.is_some() {
-                    stats.learnt_clause_count += 1;
+                if trail.current_decision_level() == 0 {
+                    info!("conflict in decision level 0: {:?}", conflict);
+                    return self.infeasible(stats);
                 }
 
-                match self.backtrack_and_pivot(
-                    conflict,
+                trace!("conflict: {:?}", conflict);
+                let analyzer = ConflictAnalyzer::default();
+                let analyzed_conflict = analyzer
+                    .analyse_conflict(&clause_store, &trail, &knowledge_graph, &conflict)
+                    .unwrap();
+                trace!("analyzed_conflict: {:?}", analyzed_conflict);
+
+                self.backtrack(
+                    &conflict,
+                    &analyzed_conflict,
                     &mut trail,
                     &mut clause_store,
                     &mut knowledge_graph,
-                ) {
-                    None => {
-                        return Solution {
-                            literals: self.variables.clone(),
-                            solution: None,
-                            stats,
+                )
+                .unwrap();
+                stats.backtrack_count += 1;
+
+                if let Some(clause) =
+                    clause_store.add_clause(analyzed_conflict.learnt_clause.clone())
+                {
+                    stats.learnt_clause_count += 1;
+                    if clause.is_unit() {
+                        let lit = clause.unit();
+                        if trail.assignment().get(lit.var()) == Some(lit.invert()) {
+                            info!("infeasible due to conflicting learnt unit clause");
+                            return self.infeasible(stats);
                         }
+                        trail.add_inferred(lit);
+                        knowledge_graph.add_initial(lit);
+                        clause_store.mark_resolved(lit.var());
                     }
-                    Some(_) => continue,
                 }
+                continue;
             }
 
             if clause_store.idx().all_clauses_resolved() {
                 return Solution {
                     literals: self.variables.clone(),
                     solution: Some(trail.assignment().clone()),
-                    stats: stats,
+                    stats,
                 };
             }
 
@@ -163,19 +182,21 @@ impl Instance {
         }
     }
 
-    fn backtrack_and_pivot(
+    fn backtrack(
         &self,
-        conflict: Conflict,
+        conflict: &Conflict,
+        analyzed_conflict: &AnalyzedConflict,
         path: &mut Trail,
         clause_store: &mut ClauseStore,
         knowledge_graph: &mut KnowledgeGraph,
     ) -> Option<()> {
         // Attempt to find the position that should be pivoted on. if we cannot find such a point, we have failed to backtrack
-        let pivot = match self
-            .backtrack_strategy
-            .find_backtrack_point(path.search_path(), &conflict)
-        {
-            None => return None,
+        let pivot = match self.backtrack_strategy.find_backtrack_point(
+            path.search_path(),
+            conflict,
+            analyzed_conflict,
+        ) {
+            None => panic!("backtrack failed"),
             Some(pivot) => pivot,
         };
         let backtracked = path.backtrack(pivot);
@@ -186,21 +207,15 @@ impl Instance {
         }
         knowledge_graph.remove(&backtracked.assignments);
 
-        // Find the next place to go. If there is none, the search is finished
-        let decision =
-            match self
-                .backtrack_strategy
-                .next_decision(path.search_path(), &conflict, &backtracked)
-            {
-                None => return None,
-                Some(lit) => lit,
-            };
-
-        path.add_decision(decision);
-        clause_store.mark_resolved(decision.var());
-        knowledge_graph.add_decision(decision);
-
         Some(())
+    }
+
+    fn infeasible(&self, stats: EvaluationStats) -> Solution {
+        Solution {
+            literals: self.variables.clone(),
+            solution: None,
+            stats,
+        }
     }
 }
 
@@ -263,6 +278,7 @@ mod test {
     // This test starts with a satisfiable formula (A OR B), and then goes into an unsatisfiable formula.
     #[test]
     fn test_build_and_solve_infeasible() {
+        // env_logger::init();
         let mut pb = ProblemBuilder::new();
 
         let a = pb.var("a");
@@ -377,7 +393,7 @@ mod test {
     // This test requires the solver to step into a=true, hit conflicts, backtrack, and then try a=false
     #[test]
     fn test_build_and_solve_feasible_backtrack() {
-        env_logger::init();
+        // env_logger::init();
 
         let mut vr = VariableRegister::new();
         let va = vr.create_original("a");
