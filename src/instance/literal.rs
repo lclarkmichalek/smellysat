@@ -9,7 +9,11 @@ pub const MAX_LITERAL: u64 = 1 << 63;
 
 impl fmt::Debug for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}={}", self.var(), self.polarity())
+        if self.polarity() {
+            write!(f, "{:?}", self.var())
+        } else {
+            write!(f, "!{:?}", self.var())
+        }
     }
 }
 

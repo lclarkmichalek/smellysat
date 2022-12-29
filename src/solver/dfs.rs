@@ -109,6 +109,7 @@ impl Instance {
             stats.unit_prop_count += trail.assignments_since_last_decision().size();
             if let Some(conflict) = prop_eval_result {
                 trace!("conflict: {:?}", conflict);
+                trace!("kg: {}", knowledge_graph.as_dot_url(&clause_store, &trail));
                 stats.backtrack_count += 1;
                 let implicated_vars =
                     knowledge_graph.find_implicated_decision_variables(&clause_store, &conflict);

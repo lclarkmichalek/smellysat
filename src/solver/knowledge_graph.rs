@@ -1,13 +1,15 @@
 use std::collections::VecDeque;
 
 use fnv::FnvHashSet;
+use itertools::Itertools;
 use log::trace;
 
 use crate::instance::*;
 
 use super::{
     backtrack::Conflict,
-    clause_store::{ClauseRef, ClauseStore},
+    clause_store::{ClauseRef, ClauseRefResolver, ClauseStore},
+    trail::Trail,
 };
 
 // As we process and make deductions (through unit propogation), we would like to store the graph. This is the global knowledge graph.
@@ -120,6 +122,69 @@ impl KnowledgeGraph {
         }
 
         decisions
+    }
+
+    pub(crate) fn as_dot(&self, store: &ClauseStore, trail: &Trail) -> String {
+        let mut lines = vec!["digraph knowledge_graph {".to_owned()];
+
+        for (ix, level) in trail.search_path().iter().enumerate() {
+            lines.push(format!("subgraph cluster_{} {{", ix));
+            lines.push("rank = same;".to_owned());
+            if let Some(decision) = level.decision {
+                lines.push(format!(
+                    "  {:?} [color = red, label=\"{:?}\"]",
+                    decision.var(),
+                    decision
+                ));
+            }
+            for &inference in level.inferred.iter() {
+                let vertex = &self.vertices[inference.var().index() as usize];
+                if vertex.trigger.is_none() {
+                    // if this was a unit, and inferred in decision level 0
+                    lines.push(format!(
+                        "  {:?} [color = black, label=\"{:?}\"]",
+                        inference.var(),
+                        inference
+                    ));
+                    continue;
+                }
+
+                lines.push(format!(
+                    "  {:?} [color = grey, label=\"{:?}\"]",
+                    inference.var(),
+                    inference
+                ));
+                let trigger = vertex.trigger.unwrap();
+                lines.push(format!(
+                    "  {:?} -> {:?} [color = black]",
+                    trigger,
+                    inference.var()
+                ));
+                for src in store.clause_literals(vertex.clause.unwrap()) {
+                    if src.var() == trigger || src.var() == inference.var() {
+                        continue;
+                    }
+                    lines.push(format!(
+                        "  {:?} -> {:?} [color = grey]",
+                        src.var(),
+                        inference.var()
+                    ))
+                }
+            }
+            lines.push("}".to_owned());
+        }
+
+        lines.push("}".to_owned());
+
+        lines.join("\n")
+    }
+
+    pub(crate) fn as_dot_url(&self, store: &ClauseStore, trail: &Trail) -> String {
+        vec![
+            "https://edotor.net/?engine=dot#".to_owned(),
+            urlencoding::encode(&self.as_dot(store, trail)).to_string(),
+        ]
+        .join("")
     }
 }
 
