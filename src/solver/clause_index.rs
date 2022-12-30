@@ -9,7 +9,7 @@ use super::clause_store::{ClauseRef, ClauseRefResolver, ClauseStore};
 #[derive(Clone)]
 pub(crate) struct ClauseIndex {
     // Mapping from variable to the indexes of clauses containing the variable
-    by_var: FnvHashMap<Variable, Vec<usize>>,
+    by_var: FnvHashMap<Variable, FnvHashSet<usize>>,
     // Variables that have been marked resolved
     resolved_vars: FnvHashSet<Variable>,
     // Mapping from the reference of a clause to its index in the following lists
@@ -46,7 +46,10 @@ impl ClauseIndex {
 
         for (i, &clause) in clauses.iter().enumerate() {
             for lit in resolver.clause_literals(clause) {
-                idx.by_var.entry(lit.var()).or_insert(vec![]).push(i);
+                idx.by_var
+                    .entry(lit.var())
+                    .or_insert(FnvHashSet::default())
+                    .insert(i);
             }
         }
 
@@ -136,7 +139,10 @@ impl ClauseIndex {
             }
         }
         for lit in literals {
-            self.by_var.entry(lit.var()).or_insert(vec![]).push(ix);
+            self.by_var
+                .entry(lit.var())
+                .or_insert(FnvHashSet::default())
+                .insert(ix);
         }
     }
 }
@@ -152,14 +158,14 @@ impl<'a> ClauseIndexView<'a> {
     }
 
     pub(crate) fn find_unit_prop_candidates(&self, literal: Literal) -> Vec<ClauseRef> {
-        match self.idx.by_var.get(&literal.var()) {
-            None => vec![],
-            Some(clause_ixes) => clause_ixes
-                .iter()
-                .filter(|ix| self.idx.one_free_var_clauses.contains(ix))
-                .filter_map(|&ix| self.store.get(ix))
-                .collect(),
-        }
+        let by_var_ixes = match self.idx.by_var.get(&literal.var()) {
+            None => return vec![],
+            Some(clause_ixes) => clause_ixes,
+        };
+        by_var_ixes
+            .intersection(&self.idx.one_free_var_clauses)
+            .filter_map(|&ix| self.store.get(ix))
+            .collect()
     }
 
     pub(crate) fn find_evaluatable_candidates(&self, literal: Literal) -> Vec<ClauseRef> {
