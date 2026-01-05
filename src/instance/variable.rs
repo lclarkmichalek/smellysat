@@ -2,7 +2,7 @@ use std::fmt;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct Variable(pub u64);
+pub struct Variable(pub u32);
 
 impl fmt::Debug for Variable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

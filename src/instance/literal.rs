@@ -4,19 +4,19 @@ use super::Variable;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct Literal(u64);
+pub struct Literal(u32);
 
 impl Literal {
-    /// Safely transmute a mutable slice of Literals to a mutable slice of u64.
-    /// This is safe because Literal is #[repr(transparent)] over u64.
+    /// Safely transmute a mutable slice of Literals to a mutable slice of u32.
+    /// This is safe because Literal is #[repr(transparent)] over u32.
     #[inline]
-    pub(crate) fn slice_as_u64_mut(slice: &mut [Literal]) -> &mut [u64] {
-        // SAFETY: Literal is #[repr(transparent)] over u64, so this is safe
+    pub(crate) fn slice_as_u32_mut(slice: &mut [Literal]) -> &mut [u32] {
+        // SAFETY: Literal is #[repr(transparent)] over u32, so this is safe
         unsafe { std::mem::transmute(slice) }
     }
 }
 
-pub const MAX_LITERAL: u64 = 1 << 63;
+pub const MAX_LITERAL: u32 = 1 << 31;
 
 impl fmt::Debug for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -31,9 +31,9 @@ impl fmt::Debug for Literal {
 impl Literal {
     pub fn new(var: Variable, polarity: bool) -> Literal {
         if var.0 > MAX_LITERAL {
-            panic!("variable too large - must be < 2^63");
+            panic!("variable too large - must be < 2^31");
         }
-        Literal((var.0 << 1) | (polarity as u64))
+        Literal((var.0 << 1) | (polarity as u32))
     }
 
     pub fn var(&self) -> Variable {
@@ -54,7 +54,7 @@ mod test {
 
     #[test]
     fn test_literal_bookkeeping() {
-        for idx in vec![0, 10000000, 1000, 1 << 46] {
+        for idx in vec![0u32, 10000000, 1000, 1 << 20] {
             let var = Variable(idx);
             let lit = Literal::new(var, true);
             assert_eq!(lit.var(), var);

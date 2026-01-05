@@ -8,9 +8,9 @@ pub(crate) fn sort_and_dedupe_literals(vec: &mut Vec<Literal>) {
     }
     vec.sort();
 
-    // Use sosorted's SIMD-optimized deduplicate on the underlying u64 data
-    let as_u64 = Literal::slice_as_u64_mut(vec.as_mut_slice());
-    let new_len = sosorted::deduplicate(as_u64);
+    // Use sosorted's SIMD-optimized deduplicate on the underlying u32 data
+    let as_u32 = Literal::slice_as_u32_mut(vec.as_mut_slice());
+    let new_len = sosorted::deduplicate(as_u32);
     vec.truncate(new_len);
 }
 
