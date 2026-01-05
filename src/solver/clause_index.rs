@@ -24,7 +24,7 @@ pub(crate) struct ClauseIndex {
 
 impl ClauseIndex {
     // We assume at this point that all literals are free.
-    pub(crate) fn new<'a, R>(resolver: R, clauses: &Vec<ClauseRef>) -> ClauseIndex
+    pub(crate) fn new<'a, R>(resolver: R, clauses: &[ClauseRef]) -> ClauseIndex
     where
         R: ClauseRefResolver<'a>,
     {
@@ -46,10 +46,7 @@ impl ClauseIndex {
 
         for (i, &clause) in clauses.iter().enumerate() {
             for lit in resolver.clause_literals(clause) {
-                idx.by_var
-                    .entry(lit.var())
-                    .or_insert(FnvHashSet::default())
-                    .insert(i);
+                idx.by_var.entry(lit.var()).or_default().insert(i);
             }
         }
 
@@ -139,10 +136,7 @@ impl ClauseIndex {
             }
         }
         for lit in literals {
-            self.by_var
-                .entry(lit.var())
-                .or_insert(FnvHashSet::default())
-                .insert(ix);
+            self.by_var.entry(lit.var()).or_default().insert(ix);
         }
     }
 }
@@ -184,7 +178,7 @@ impl<'a> ClauseIndexView<'a> {
     }
 }
 
-impl<'a> fmt::Debug for ClauseIndex {
+impl fmt::Debug for ClauseIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

@@ -1,3 +1,5 @@
+#[cfg(debug_assertions)]
+#[allow(unused_imports)]
 use is_sorted::IsSorted;
 use log::info;
 use std::hash::Hasher;
@@ -15,7 +17,7 @@ pub(crate) struct ClauseStore {
 impl ClauseStore {
     pub(crate) fn new(clauses: Vec<Clause>) -> ClauseStore {
         let list = ClauseList::new(clauses);
-        let refs = list.iter().collect();
+        let refs: Vec<ClauseRef> = list.iter().collect();
         let idx = ClauseIndex::new(&list, &refs);
         ClauseStore {
             clauses: list,
@@ -23,19 +25,20 @@ impl ClauseStore {
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = ClauseRef> + Captures {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ClauseRef> + Captures<'_> {
         self.clauses.iter()
     }
 
-    pub(crate) fn idx(&self) -> ClauseIndexView {
-        ClauseIndexView::new(&self, &self.index)
+    pub(crate) fn idx(&self) -> ClauseIndexView<'_> {
+        ClauseIndexView::new(self, &self.index)
     }
 
     pub(crate) fn get(&self, ix: usize) -> Option<ClauseRef> {
         self.clauses.get(ix)
     }
 
-    pub(crate) fn contains(&self, clause: &Vec<Literal>) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn contains(&self, clause: &[Literal]) -> bool {
         self.clauses.contains(clause)
     }
 
@@ -78,7 +81,7 @@ impl ClauseList {
         ClauseList { literals, offsets }
     }
 
-    fn contains(&self, clause: &Vec<Literal>) -> bool {
+    fn contains(&self, clause: &[Literal]) -> bool {
         ensure_sorted(clause);
         // Check we haven't already seen this clause!
         for cl in self.iter() {
@@ -106,7 +109,7 @@ impl ClauseList {
         Some(self.mk_ref(offset, clause_len))
     }
 
-    fn iter(&self) -> impl Iterator<Item = ClauseRef> + Captures {
+    fn iter(&self) -> impl Iterator<Item = ClauseRef> + Captures<'_> {
         (0..self.offsets.len()).map(|ix| self.get(ix).unwrap())
     }
 
@@ -126,7 +129,7 @@ impl ClauseList {
     }
 }
 
-#[derive(Debug, Clone, Copy, Ord, Eq)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub(crate) enum ClauseRef {
     Unit(Literal),
     Pair(Literal, Literal),
@@ -147,18 +150,18 @@ impl ClauseRef {
     }
 
     fn literals_from_list<'c>(&self, list: &'c ClauseList) -> impl Iterator<Item = Literal> + 'c {
-        match self {
-            &ClauseRef::Unit(l) => ClauseLiteralsIterator {
+        match *self {
+            ClauseRef::Unit(l) => ClauseLiteralsIterator {
                 fst: Some(l),
                 snd: None,
                 rst: None,
             },
-            &ClauseRef::Pair(a, b) => ClauseLiteralsIterator {
+            ClauseRef::Pair(a, b) => ClauseLiteralsIterator {
                 fst: Some(a),
                 snd: Some(b),
                 rst: None,
             },
-            &ClauseRef::Long { offset, length } => ClauseLiteralsIterator {
+            ClauseRef::Long { offset, length } => ClauseLiteralsIterator {
                 fst: None,
                 snd: None,
                 rst: Some(&list.literals[offset..(offset + length)]),
@@ -175,35 +178,32 @@ impl ClauseRef {
     }
 
     pub(crate) fn len(&self) -> usize {
-        match self {
-            &ClauseRef::Unit(_) => 1,
-            &ClauseRef::Pair(_, _) => 2,
-            &ClauseRef::Long { offset: _, length } => length,
+        match *self {
+            ClauseRef::Unit(_) => 1,
+            ClauseRef::Pair(_, _) => 2,
+            ClauseRef::Long { offset: _, length } => length,
         }
     }
 
     pub(crate) fn is_unit(&self) -> bool {
-        match self {
-            &ClauseRef::Unit(_) => true,
-            _ => false,
-        }
+        matches!(self, ClauseRef::Unit(_))
     }
 }
 
-impl<'c> std::hash::Hash for ClauseRef {
+impl std::hash::Hash for ClauseRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            &ClauseRef::Unit(l) => l.hash(state),
-            &ClauseRef::Pair(a, b) => {
+        match *self {
+            ClauseRef::Unit(l) => l.hash(state),
+            ClauseRef::Pair(a, b) => {
                 a.hash(state);
                 b.hash(state);
             }
-            &ClauseRef::Long { offset, length: _ } => offset.hash(state),
+            ClauseRef::Long { offset, length: _ } => offset.hash(state),
         }
     }
 }
 
-impl<'c> std::cmp::PartialEq for ClauseRef {
+impl std::cmp::PartialEq for ClauseRef {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (&ClauseRef::Unit(a), &ClauseRef::Unit(b)) => a == b,
@@ -223,15 +223,21 @@ impl<'c> std::cmp::PartialEq for ClauseRef {
     }
 }
 
-impl<'c> std::cmp::PartialOrd for ClauseRef {
+impl std::cmp::PartialOrd for ClauseRef {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::cmp::Ord for ClauseRef {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.len().cmp(&other.len()) != std::cmp::Ordering::Equal {
-            return self.len().partial_cmp(&other.len());
+            return self.len().cmp(&other.len());
         }
 
         match (&self, &other) {
-            (ClauseRef::Unit(a), ClauseRef::Unit(b)) => a.partial_cmp(b),
-            (ClauseRef::Pair(a, b), ClauseRef::Pair(c, d)) => (a, b).partial_cmp(&(c, d)),
+            (ClauseRef::Unit(a), ClauseRef::Unit(b)) => a.cmp(b),
+            (ClauseRef::Pair(a, b), ClauseRef::Pair(c, d)) => (a, b).cmp(&(c, d)),
             (
                 ClauseRef::Long {
                     offset: a,
@@ -241,7 +247,7 @@ impl<'c> std::cmp::PartialOrd for ClauseRef {
                     offset: b,
                     length: _,
                 },
-            ) => a.partial_cmp(b),
+            ) => a.cmp(b),
             _ => unreachable!(),
         }
     }
@@ -331,10 +337,10 @@ impl<'a> ExactSizeIterator for ClauseLiteralsIterator<'a> {
 }
 
 #[cfg(not(debug_assertions))]
-fn ensure_sorted(_: &Vec<Literal>) {}
+fn ensure_sorted(_: &[Literal]) {}
 
 #[cfg(debug_assertions)]
-fn ensure_sorted(lits: &Vec<Literal>) {
+fn ensure_sorted(lits: &[Literal]) {
     if !lits.iter().is_sorted() {
         panic!("must be sorted");
     }

@@ -10,9 +10,9 @@ pub(crate) struct LiteralSet {
 
 impl LiteralSet {
     pub(crate) fn new() -> LiteralSet {
-        return LiteralSet {
+        LiteralSet {
             values: FnvHashMap::default(),
-        };
+        }
     }
 
     pub(crate) fn add(&mut self, lit: Literal) {
@@ -42,6 +42,7 @@ impl LiteralSet {
         self.values.len()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_assignment_vec(asses: &Vec<Literal>) -> LiteralSet {
         let mut set = LiteralSet::new();
         for ass in asses {

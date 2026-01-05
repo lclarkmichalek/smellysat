@@ -67,12 +67,9 @@ impl Trail {
         self.require_unset(literal);
 
         self.cumulative_assignment.add(literal);
-        match self.trail.last_mut() {
-            Some(last_step) => {
-                last_step.inferred.push(literal);
-                last_step.all.add(literal);
-            }
-            None => {}
+        if let Some(last_step) = self.trail.last_mut() {
+            last_step.inferred.push(literal);
+            last_step.all.add(literal);
         }
     }
 
@@ -87,7 +84,7 @@ impl Trail {
             self.trail.len() - pivot - 1
         );
         let dropped = self.trail.drain(pivot + 1..).collect::<Vec<_>>();
-        let last_decision = dropped.first().map(|e| e.decision).flatten();
+        let last_decision = dropped.first().and_then(|e| e.decision);
         let mut assignments = vec![];
         for entry in dropped.into_iter() {
             assignments.extend(entry.inferred);
@@ -178,6 +175,7 @@ impl TrailEntry {
 pub(crate) struct BacktrackResult {
     pub(crate) assignments: Vec<Literal>,
     // The last decision taken before the backtrack. None if the backtrack did not actually reverse any steps
+    #[allow(dead_code)]
     pub(crate) last_decision: Option<Literal>,
 }
 
