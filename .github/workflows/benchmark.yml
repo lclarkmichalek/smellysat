@@ -1,0 +1,99 @@
+on: [pull_request]
+
+name: benchmark
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Run benchmarks
+        id: bench
+        run: |
+          set +e
+          cargo bench --no-fail-fast 2>&1 | tee benchmark_output.txt
+          BENCH_EXIT=$?
+          set -e
+
+          # Create summary
+          echo "## Benchmark Results" > summary.md
+          echo "" >> summary.md
+
+          if [ $BENCH_EXIT -eq 0 ]; then
+            echo "✅ **Benchmarks completed successfully**" >> summary.md
+          else
+            echo "⚠️ **Benchmarks completed with warnings**" >> summary.md
+          fi
+
+          echo "" >> summary.md
+          echo "### Results" >> summary.md
+          echo "" >> summary.md
+          echo '```' >> summary.md
+
+          # Extract benchmark results (lines with timing info)
+          grep -E "^(sat/|unsat/|parsing/|Benchmarking|time:)" benchmark_output.txt | head -100 >> summary.md || true
+
+          echo '```' >> summary.md
+          echo "" >> summary.md
+          echo "📊 **Full HTML report available in workflow artifacts**" >> summary.md
+
+          cat summary.md
+
+          # Always exit successfully to allow artifact upload
+          exit 0
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            target/criterion/
+            benchmark_output.txt
+          retention-days: 30
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('## Benchmark Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: summary
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: summary
+              });
+            }
