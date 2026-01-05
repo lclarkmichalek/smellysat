@@ -1,6 +1,6 @@
 on: [push, pull_request]
 
-name: test
+name: CI
 
 jobs:
   test:
@@ -10,8 +10,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-05
 
       - name: Run cargo test
         run: cargo test
@@ -23,12 +25,13 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-01-05
           components: clippy
 
-      - name: Run cargo clippy
+      - name: Run clippy
         run: cargo clippy -- -D warnings
 
   fmt:
@@ -38,10 +41,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-01-05
           components: rustfmt
 
-      - name: Run cargo fmt
-        run: cargo fmt --check
+      - name: Check formatting
+        run: cargo fmt --all -- --check

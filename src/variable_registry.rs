@@ -5,9 +5,9 @@ use crate::instance::Variable;
 #[derive(Clone, Debug)]
 pub struct VariableRegister {
     variables: Vec<Variable>,
-    names: HashMap<u64, String>,
-    original_variables: Vec<u64>,
-    literal_count: u64,
+    names: HashMap<u32, String>,
+    original_variables: Vec<u32>,
+    literal_count: u32,
 }
 
 impl VariableRegister {

@@ -321,8 +321,8 @@ impl<'a> Iterator for ClauseLiteralsIterator<'a> {
             2
         } else if self.fst.is_some() {
             1
-        } else if self.rst.is_some() {
-            self.rst.unwrap().len()
+        } else if let Some(rst) = self.rst {
+            rst.len()
         } else {
             0
         };

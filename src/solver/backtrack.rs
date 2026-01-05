@@ -4,7 +4,7 @@ use log::trace;
 
 use crate::{
     instance::{Literal, Variable},
-    solver::sorted_vec::sort_and_dedupe,
+    solver::sorted_vec::sort_and_dedupe_literals,
 };
 
 use super::{
@@ -129,7 +129,7 @@ impl ConflictAnalyzer {
                     .iter()
                     .map(|&v| assignment.get(v).unwrap())
                     .collect_vec();
-                sort_and_dedupe(&mut edge);
+                sort_and_dedupe_literals(&mut edge);
                 return (*uip, edge);
             }
         }
