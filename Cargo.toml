@@ -18,6 +18,7 @@ is_sorted = "0.1.1"
 [dev-dependencies]
 itertools = "0.10.5"
 env_logger = "0.10.0"
+tempfile = "3.10"
 
 [profile.release]
 debug = true
