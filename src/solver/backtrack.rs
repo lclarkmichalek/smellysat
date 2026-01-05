@@ -141,19 +141,20 @@ pub(crate) trait BacktrackStrategy {
     /// Calculates how far we should roll back the search tree
     fn find_backtrack_point(
         &self,
-        path: &Vec<TrailEntry>,
+        path: &[TrailEntry],
         conflict: &Conflict,
         analyzed_conflict: &AnalyzedConflict,
     ) -> Option<usize>;
 }
 
 /// A naive dfs backtrack strategy - look for the last path where we didn't go "left" - i.e. try the false path
+#[allow(dead_code)]
 pub(crate) struct DumbBacktrackStrategy {}
 
 impl BacktrackStrategy for DumbBacktrackStrategy {
     fn find_backtrack_point(
         &self,
-        path: &Vec<TrailEntry>,
+        path: &[TrailEntry],
         _conflict: &Conflict,
         _analyzed_conflict: &AnalyzedConflict,
     ) -> Option<usize> {
@@ -176,7 +177,7 @@ pub(crate) struct BackjumpStrategy {}
 impl BacktrackStrategy for BackjumpStrategy {
     fn find_backtrack_point(
         &self,
-        _path: &Vec<TrailEntry>,
+        _path: &[TrailEntry],
         _conflict: &Conflict,
         analyzed_conflict: &AnalyzedConflict,
     ) -> Option<usize> {

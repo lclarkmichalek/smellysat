@@ -3,7 +3,7 @@ use std::hash::Hasher;
 
 use super::Literal;
 
-#[derive(Clone, Eq, Ord)]
+#[derive(Clone, Eq)]
 pub struct Clause {
     id: usize,
     literals: Vec<Literal>,
@@ -23,19 +23,25 @@ impl std::cmp::PartialEq for Clause {
 
 impl std::cmp::PartialOrd for Clause {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.id.partial_cmp(&other.id)
+        Some(self.cmp(other))
+    }
+}
+
+impl std::cmp::Ord for Clause {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
     }
 }
 
 impl Clause {
-    pub(crate) fn new(lits: &Vec<Literal>) -> Clause {
+    pub(crate) fn new(lits: &[Literal]) -> Clause {
         Self::new_with_id(0, lits)
     }
 
-    pub(crate) fn new_with_id(ix: usize, lits: &Vec<Literal>) -> Clause {
+    pub(crate) fn new_with_id(ix: usize, lits: &[Literal]) -> Clause {
         let mut clause = Clause {
             id: ix,
-            literals: lits.clone(),
+            literals: lits.to_vec(),
         };
         clause.literals.sort_by_key(|l| l.var());
         for window in clause.literals.windows(2) {
@@ -54,10 +60,12 @@ impl Clause {
         self.literals.len()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn is_unit(&self) -> bool {
         self.len() == 1
     }
 
+    #[allow(dead_code)]
     pub(crate) fn literals(&self) -> &Vec<Literal> {
         &self.literals
     }

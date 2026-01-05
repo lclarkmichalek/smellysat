@@ -4,7 +4,7 @@ use std::rc::Rc;
 use log::{info, trace};
 
 use crate::instance::*;
-use crate::solver::backtrack::{BacktrackStrategy, ConflictAnalyzer, DumbBacktrackStrategy};
+use crate::solver::backtrack::{BacktrackStrategy, ConflictAnalyzer};
 use crate::solver::knowledge_graph::KnowledgeGraph;
 use crate::solver::sorted_vec::sort_and_dedupe;
 use crate::solver::trail::Trail;
@@ -25,8 +25,7 @@ impl TraversalPath {
     fn next(&self, path: &Trail) -> Option<&Variable> {
         self.variables
             .iter()
-            .filter(|&&l| path.assignment().get(l).is_none())
-            .next()
+            .find(|&&l| path.assignment().get(l).is_none())
     }
 }
 
@@ -74,7 +73,7 @@ impl Instance {
         let mut clause_store = ClauseStore::new(self.clauses.clone());
         let mut knowledge_graph = KnowledgeGraph::new(self.variables.count());
 
-        let initial_assignment = match find_inital_assignment(&mut clause_store) {
+        let initial_assignment = match find_inital_assignment(&clause_store) {
             InitialAssignmentResult::Conflict(_conflict) => {
                 return Solution {
                     literals: self.variables.clone(),

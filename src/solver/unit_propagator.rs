@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use log::{info, trace};
-
 use crate::instance::*;
 
 use super::assignment_set::EvaluationResult;
@@ -39,19 +37,17 @@ impl<'a> UnitPropagator<'a> {
             .as_assignment_vec();
         for &literal in untested_literals.iter() {
             for clause in self.clause_store.idx().find_evaluatable_candidates(literal) {
-                match self
+                if self
                     .trail
                     .assignment()
-                    .evaluate(clause.literals(&self.clause_store))
+                    .evaluate(clause.literals(self.clause_store))
+                    == EvaluationResult::False
                 {
-                    EvaluationResult::False => {
-                        return Some(Conflict {
-                            conflicting_decision: self.trail.last_decision(),
-                            conflicting_literal: literal,
-                            conflicting_clause: clause,
-                        });
-                    }
-                    _ => {}
+                    return Some(Conflict {
+                        conflicting_decision: self.trail.last_decision(),
+                        conflicting_literal: literal,
+                        conflicting_clause: clause,
+                    });
                 }
             }
         }
@@ -99,14 +95,14 @@ impl<'a> UnitPropagator<'a> {
         let assignment = self.trail.assignment();
 
         let mut last_free = None;
-        for literal in clause.literals(&self.clause_store) {
+        for literal in clause.literals(self.clause_store) {
             if let Some(ass) = assignment.get(literal.var()) {
                 if ass == literal {
                     // If there is a matching literal, we can't say anything about the free variable
                     return PropagationResult::Failed;
                 }
             } else {
-                if last_free != None {
+                if last_free.is_some() {
                     // Implies we have multiple unresolved variables, short circuit
                     return PropagationResult::Failed;
                 }

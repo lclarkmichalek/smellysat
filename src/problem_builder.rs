@@ -12,6 +12,12 @@ pub struct ProblemBuilder {
     expressions: RefCell<Vec<Vec<Literal>>>,
 }
 
+impl Default for ProblemBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProblemBuilder {
     pub fn new() -> ProblemBuilder {
         ProblemBuilder {
@@ -86,9 +92,9 @@ pub enum BoolExpr {
 }
 impl BoolExpr {
     fn as_literal(&self) -> Literal {
-        match self {
-            &BoolExpr::Variable(lit) => Literal::new(lit, true),
-            &BoolExpr::Not(lit) => Literal::new(lit, false),
+        match *self {
+            BoolExpr::Variable(lit) => Literal::new(lit, true),
+            BoolExpr::Not(lit) => Literal::new(lit, false),
         }
     }
 }

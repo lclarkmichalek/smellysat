@@ -1,15 +1,9 @@
-use std::collections::VecDeque;
-
-use fnv::FnvHashSet;
-use itertools::Itertools;
 use log::trace;
 
 use crate::instance::*;
 
 use super::{
-    backtrack::Conflict,
     clause_store::{ClauseRef, ClauseRefResolver, ClauseStore},
-    sorted_vec::sort_and_dedupe,
     trail::Trail,
 };
 
@@ -58,7 +52,7 @@ impl KnowledgeGraph {
         v.clause = Some(clause);
     }
 
-    pub(crate) fn remove(&mut self, literals: &Vec<Literal>) {
+    pub(crate) fn remove(&mut self, literals: &[Literal]) {
         for literal in literals.iter() {
             let v = &mut self.vertices[literal.var().idx()];
             v.trigger = None;
@@ -71,6 +65,7 @@ impl KnowledgeGraph {
         &self.vertices[var.idx()]
     }
 
+    #[allow(dead_code)]
     pub(crate) fn as_dot(&self, store: &ClauseStore, trail: &Trail) -> String {
         let mut lines = vec!["digraph knowledge_graph {".to_owned()];
 
@@ -126,8 +121,9 @@ impl KnowledgeGraph {
         lines.join("\n")
     }
 
+    #[allow(dead_code)]
     pub(crate) fn as_dot_url(&self, store: &ClauseStore, trail: &Trail) -> String {
-        vec![
+        [
             "https://edotor.net/?engine=dot#".to_owned(),
             urlencoding::encode(&self.as_dot(store, trail)).to_string(),
         ]

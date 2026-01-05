@@ -25,14 +25,14 @@ pub enum DimacsError {
 type Result<T> = std::result::Result<T, DimacsError>;
 
 pub fn parse(filename: &str) -> Result<Instance> {
-    let file = File::open(&filename)?;
+    let file = File::open(filename)?;
     let buffer = BufReader::new(&file);
 
     let mut words = buffer
         .lines()
         // Filter out lines starting with c - these are comments
         .filter(|l| match l {
-            Ok(line) => line.chars().next() != Some('c'),
+            Ok(line) => !line.starts_with('c'),
             // Keep errors! We need to terminate ASAP
             _ => true,
         })
@@ -69,7 +69,7 @@ pub fn parse(filename: &str) -> Result<Instance> {
         }
     }
 
-    return Ok(Instance::new_from_clauses(cnf, vars));
+    Ok(Instance::new_from_clauses(cnf, vars))
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +79,7 @@ struct DimacsHeader {
 }
 
 impl DimacsHeader {
-    fn parse<'a, I>(words: &mut I) -> Result<Self>
+    fn parse<I>(words: &mut I) -> Result<Self>
     where
         I: Iterator<Item = Result<String>>,
     {
