@@ -76,7 +76,10 @@ fn benchmark_parsing(c: &mut Criterion) {
     // Benchmark parsing different file sizes
     let files = [
         ("aim-50", "examples/problem_specs/sat/aim-50-1_6-yes1-4.cnf"),
-        ("aim-100", "examples/problem_specs/unsat/aim-100-1_6-no-1.cnf"),
+        (
+            "aim-100",
+            "examples/problem_specs/unsat/aim-100-1_6-no-1.cnf",
+        ),
         ("logistics.a", "examples/problem_specs/sat/logistics.a.cnf"),
         ("dubois50", "examples/problem_specs/unsat/dubois50.cnf"),
     ];
@@ -87,9 +90,7 @@ fn benchmark_parsing(c: &mut Criterion) {
             let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
             group.throughput(Throughput::Bytes(file_size));
 
-            group.bench_function(name, |b| {
-                b.iter(|| dimacs::parse(black_box(path)).unwrap())
-            });
+            group.bench_function(name, |b| b.iter(|| dimacs::parse(black_box(path)).unwrap()));
         }
     }
 
