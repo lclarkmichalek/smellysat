@@ -3,7 +3,18 @@ use std::fmt;
 use super::Variable;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Literal(u64);
+
+impl Literal {
+    /// Safely transmute a mutable slice of Literals to a mutable slice of u64.
+    /// This is safe because Literal is #[repr(transparent)] over u64.
+    #[inline]
+    pub(crate) fn slice_as_u64_mut(slice: &mut [Literal]) -> &mut [u64] {
+        // SAFETY: Literal is #[repr(transparent)] over u64, so this is safe
+        unsafe { std::mem::transmute(slice) }
+    }
+}
 
 pub const MAX_LITERAL: u64 = 1 << 63;
 

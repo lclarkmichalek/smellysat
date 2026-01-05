@@ -14,10 +14,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: nightly
 
       - name: Run benchmarks
         id: bench

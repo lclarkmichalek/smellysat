@@ -727,10 +727,16 @@ dependencies = [
  "lazy_static",
  "log",
  "prometheus",
+ "sosorted",
  "tempfile",
  "thiserror 2.0.17",
  "urlencoding",
 ]
+
+[[package]]
+name = "sosorted"
+version = "0.1.0"
+source = "git+https://github.com/lclarkmichalek/sosorted?branch=main#0ef4cf886d33a4548185d0c23e0ea6653e41d5e1"
 
 [[package]]
 name = "syn"

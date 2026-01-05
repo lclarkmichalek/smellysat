@@ -6,7 +6,7 @@ use log::{info, trace};
 use crate::instance::*;
 use crate::solver::backtrack::{BacktrackStrategy, ConflictAnalyzer};
 use crate::solver::knowledge_graph::KnowledgeGraph;
-use crate::solver::sorted_vec::sort_and_dedupe;
+use crate::solver::sorted_vec::sort_and_dedupe_literals;
 use crate::solver::trail::Trail;
 use crate::solver::unit_propagator::{find_inital_assignment, InitialAssignmentResult};
 use crate::variable_registry::VariableRegister;
@@ -108,7 +108,7 @@ impl Instance {
                 trail.current_decision_level()
             );
             let mut ass = trail.assignment().as_assignment_vec();
-            sort_and_dedupe(&mut ass);
+            sort_and_dedupe_literals(&mut ass);
             trace!("assignment: {:?}", ass,);
             trace!("========");
 

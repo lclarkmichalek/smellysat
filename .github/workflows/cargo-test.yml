@@ -10,8 +10,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Run cargo test
         run: cargo test
@@ -23,8 +23,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy
 
@@ -38,8 +38,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
 

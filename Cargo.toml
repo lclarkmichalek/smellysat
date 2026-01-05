@@ -14,6 +14,7 @@ itertools = "0.14"
 lazy_static = "1.5"
 urlencoding = "2.1"
 is_sorted = "0.1"
+sosorted = { git = "https://github.com/lclarkmichalek/sosorted", branch = "main" }
 
 [dev-dependencies]
 itertools = "0.14"

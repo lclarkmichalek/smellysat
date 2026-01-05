@@ -1,6 +1,7 @@
 use std::fmt;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Variable(pub u64);
 
 impl fmt::Debug for Variable {
